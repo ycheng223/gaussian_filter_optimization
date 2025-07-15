@@ -64,7 +64,7 @@ void gaussian_filter_base(unsigned char* image, int width, int height, float sig
     // The greater the blur (i.e. variance/sigma) the larger the gaussian kernel needs to be to maintain precision but more on that later...
 
     int range = kernel_size / 2;
-    // First we allocate a temp buffer for the horizontal pass (i.e. convolve the rows with the normalized 1D gaussian kernel calculated above)
+    // First we allocate a temp buffer for the convolution
     unsigned char* temp = (unsigned char*)malloc(width * height * CHANNELS_PER_PIXEL); //total dimension will be width * height * 3 channels (i.e. RGB)
     if (!temp) {
         fprintf(stderr, "Failed to allocate temp buffer\n");
