@@ -37,7 +37,7 @@ void image_encode(const char* filepath, const unsigned char* image, int width, i
 void image_decode(const char* filename, int kernel_size, float sigma, int filter_choice, BenchmarkResult *result);
 // Load image from "input" folder, decode, and store decoded rgb data contiguously into memory as 1D array, 3 channels per pixel (i.e. RGB, NO ALPHA)
 
-unsigned char* padded_image(unsigned char* image, int range);
+unsigned char* padded_image(unsigned char* image, int width, int height, int range);
 // Preprocess the image data expanding its borders up to the maximum reach of the kernel (determined by kernel_size), padding it with the nearest edge pixel value
 // This removes the need to do any border clamping or worry about edge cases when applying the gaussian filter
 
