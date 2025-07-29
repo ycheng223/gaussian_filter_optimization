@@ -58,6 +58,12 @@ void measure_filter_time(unsigned char* image, int width, int height, float sigm
     } else if (filter_choice == 2) {
         printf("Using Separable Gaussian Filter...\n");
         gaussian_filter_separable(image, width, height, sigma, kernel_size);
+    } else if (filter_choice == 3) {
+        printf("Using Seperable Gaussian Filter (SSE)...\n");
+        gaussian_filter_sse(image, width, height, sigma, kernel_size);
+    } else {
+        fprintf(stderr, "Invalid filter choice: %d\n", filter_choice);
+        return;
     }
     
     end_cpu = clock();
@@ -250,11 +256,30 @@ void gaussian_filter_separable(unsigned char* image, int width, int height, floa
 }
 
 void gaussian_filter_sse(unsigned char* image, int width, int height, float sigma, int kernel_size){
+
+    // We will need to deinterleave the RGB values in order to process them paralelly using SIMD (i.e. can't have same instruction on different RGB channels).
+    // Specifically we will be using the SSE3 intrinsic _mm_shuffle_epi8 which will allow us to not only map any byte on a SOURCE 
+    // register to any byte on a DESTINATION register but also zero any of those bytes out if needed through bit masking.
+
+    // This means we can load three registers with bit masks and apply each of them
+    // to the data stored in __m128i input_data (where input_data is the SOURCE register). 
+    // Each bitmask maps to an individual color (RGB) and will zero out all values in input_data 
+    // except the values mapped to that color (i.e. every third value starting from 0 for Red,
+    // every third value starting from 1 for Blue, etc). All three masked outputs will then
+    // be stored in 3 additional 128 bit registers with each of these registers only containing
+    // intensity values for a single color (these are the DESTINATION registers). 
+    // This ensures that we can apply the gaussian filter operations both accurately and with parallelism.
+
+    // Initialilze 128-bit registers to store masks per the rules above (i.e. 0s everywhere but positions in input_data that 
+    // contain the color specified by the mask)
+
+    const __m128i mask_red = _mm_set_epi8(0x80,0x80,0x80,0x80,0x80,0x80,0x80,0x80,0x80,0x80, 12, 9, 6, 3, 0, 0x80);
+    const __m128i mask_green = _mm_set_epi8(0x80,0x80,0x80,0x80,0x80,0x80,0x80,0x80,0x80,0x80, 13, 10, 7, 4, 1, 0x80);
+    const __m128i mask_blue = _mm_set_epi8(0x80,0x80,0x80,0x80,0x80,0x80,0x80,0x80,0x80,0x80, 14, 11, 8, 5, 2, 0x80);
+    
     int range = kernel_size / 2;
     
-    // To further cut down on computational cost, we will take the seperable gaussian filter from above,
-    // precompute the 1D Gaussian kernel, and parallelly compute the convolution, four elements 
-    // at a time using SSE.
+    // To further cut down on computational cost, precompute the 1D gaussian kernel weights.
 
     // First we will pre-calculate the 1D Gaussian kernel and store it in a buffer
     float* kernel = (float*)malloc(kernel_size * sizeof(float)); // allocate memory for the 1D Gaussian kernel
@@ -273,6 +298,13 @@ void gaussian_filter_sse(unsigned char* image, int width, int height, float sigm
         kernel[i] /= weight_sum; 
     }
 
+    unsigned char* padded_image = image_padding_transform(image, width, height, range); // Allocate memory for the padded image and calculate its dimensions
+    if (!padded_image) {
+        free(kernel);
+        return;
+    }
+    int padded_width = width + 2 * range;
+
     // Next we prepare a temp buffer for the horizontal pass (i.e. convolve the rows with the normalized 1D gaussian kernel calculated above)
     unsigned char* temp = (unsigned char*)malloc(width * height * CHANNELS_PER_PIXEL); //total dimension will be width * height * 3 channels (i.e. RGB)
     if (!temp) {
@@ -280,45 +312,146 @@ void gaussian_filter_sse(unsigned char* image, int width, int height, float sigm
         return;
     }
     
-    // Horizontal pass: apply 1D Gaussian kernel to each row
-    for(int y = 0; y < height; y++){ // For every row...
-        for(int x = 0; x < width; x += 4){ // For every four pixels (SSE)....
-            for(int c = 0; c < 3; c++){ // And each RGB value of that pixel....
-                float sum = 0.0f; // weighted sum to calculate blur for pixel in center of kernel window
-                float weight_sum = 0.0f; // Sum of weights for normalization -> calculate weighted average
-                for (int kernel_index = -range; kernel_index <= range; kernel_index++){ //For each relative pixel position (to center of kernel) in the kernel window...
-                    int x_neighbor = x + kernel_index; // get the absolute index of the pixel
-                    int clamped_index = border_clamp(width, height, x_neighbor, y); // clamp x_neighbor if kernel extends beyond edge of image
-                    float pixel_value = image[3 * clamped_index + c]; // Get neighbor pixel value for current channel
-                    float weight = expf(-(kernel_index * kernel_index) / (2 * sigma * sigma)); //Calculate 1D Gaussian weight
-                    sum += pixel_value * weight; // Multiply and accumulate
-                    weight_sum += weight; //Accumulate weights for normalization
-                }
-                temp[3 * (y * width + x) + c] = (unsigned char)fminf(fmaxf(sum / weight_sum, 0.0f), 255.0f); //Normalize and store result
+    // Now onto the SSE horizontal pass...
+    for(int y = 0; y < height; y++) { // For every row...
+        for(int x = 0; x < width; x += 5){ // We are processing 16 bytes at a time to align with SSE register size (i.e. 5 pixels + 1 bit = 3*5 + 1 = 16)
+            __m128 sum_red = _mm_setzero_ps(); // Initialize 3 128 bit SSE registers on the CPU (i.e. XMM0, XMM1 ... etc), we will hold 4 single-precision (32 bit) FP values on each register
+            __m128 sum_green = _mm_setzero_ps(); // One register for each color (RGB)
+            __m128 sum_blue = _mm_setzero_ps();
+
+            for(int k = 0; k < range; k++){ // For every element in the kernel...
+                int data_offset = 3*(x + range + k) * 3*(range + k) * padded_width; // adjust for data offset on the padded image
+                
+                __m128i input_data = _mm_loadu_si128(
+                    (__m128i*)&padded_image[data_offset]); // load 16 bytes from the padded image into SSE register at location specified by k + offset
+
+                // Initialize more registers and apply the bitmask using _mm_shuffle_epi8.
+                __m128i red_epi_8 = _mm_shuffle_epi8(input_data, mask_red);
+                __m128i green_epi_8 = _mm_shuffle_epi8(input_data, mask_green);
+                __m128i blue_epi_8 = _mm_shuffle_epi8(input_data, mask_blue);
+
+                // Because output is typed as 8-bit integers after the shuffle operation (_mm_shuffle_epi8 operates exclusively at byte granularity), 
+                // we need to convert it back to 32 bit floating point.
+
+                // For speed, using cvtepu8 to first convert to 32 bit integers (note that epi_32 stands for 32-bit extended packed integer).
+                __m128i red_epi_32 = _mm_cvtepu8_epi32(red_epi_8);
+                __m128i green_epi_32 = _mm_cvtepu8_epi32(green_epi_8);
+                __m128i blue_epi_32 = _mm_cvtepu8_epi32(blue_epi_8);
+
+                // Then convert to 32-bit floats (note that "_ps" stands for packed single precision)
+                __m128 red_ps = _mm_cvtepi32_ps(red_epi_32);
+                __m128 green_ps = _mm_cvtepi32_ps(green_epi_32);
+                __m128 blue_ps = _mm_cvtepi32_ps(blue_epi_32);
+
+                // Now we apply the gaussian filter operations; broadcast weight to all 4 pixel values stored in a single register, then multiply and accumulate.
+                __m128 weight = _mm_set1_ps(kernel[k + range]); // SSE intrinsic to broadcast a single fp value to all elements
+                // For each color, multiply the pixel values by the weight and add to the running sum.
+                sum_red = _mm_add_ps(sum_red, _mm_mul_ps(red_ps, weight));
+                sum_green = _mm_add_ps(sum_green, _mm_mul_ps(green_ps, weight));
+                sum_blue = _mm_add_ps(sum_blue, _mm_mul_ps(blue_ps, weight));
             }
+
+            // Store to temp buffer so we can access during vertical pass
+            store_rgb_results(temp + (x * width + y) * CHANNELS_PER_PIXEL,
+                sum_red, sum_green, sum_blue);
         }
     }
     
-    // Vertical pass: apply 1D Gaussian kernel to each column of the horizontally filtered result
-    for(int y = 0; y < height; y++){ // For every row...
-        for(int x = 0; x < width; x++){ // And every pixel....
-            for(int c = 0; c < 3; c++){ // And each RGB value of that pixel....
-                float sum = 0.0f; // weighted sum to calculate blur for pixel in center of kernel window
-                float weight_sum = 0.0f; // Sum of weights for normalization -> calculate weighted average
-                for (int kernel_index = -range; kernel_index <= range; kernel_index++){ //For each pixel index in the kernel window...
-                    int y_neighbor = y + kernel_index; // get the absolute index of the pixel
-                    int clamped_index = border_clamp(width, height, x, y_neighbor); //clamp y_neighbor if kernel extends beyond edge of image
-                    float pixel_value = temp[3 * clamped_index + c]; //Get neighbor pixel value from temp buffer (horizontally filtered)
-                    float weight = expf(-(kernel_index * kernel_index) / (2 * sigma * sigma)); //Calculate 1D Gaussian weight (same as horizontal)
-                    sum += pixel_value * weight; //Multiply and accumulate
-                    weight_sum += weight; //Accumulate weights for normalization
-                }
-                image[3 * (y * width + x) + c] = (unsigned char)fminf(fmaxf(sum / weight_sum, 0.0f), 255.0f); //Normalize and store result back to image
-            }
+    // Now for the SSE Vertical Pass, because the image data is in row-major format, we will have to jump
+    // between pixels to get to the next column meaning non-contiguous memory access. Therefore we will
+    // TRANSPOSE a copy of the data (so that it becomes COLUMN-MAJOR) and store it seperately in memory.
+
+    // First allocate memory for the transposed data...
+    unsigned char* transposed = (unsigned char*)malloc(width * height * CHANNELS_PER_PIXEL);
+    if (!transposed) {
+        fprintf(stderr, "Failed to allocate transpose buffer\n");
+        free(temp);
+        free(kernel);
+        return;
+    }
+
+    // Transpose the data in 4x4 blocks so that it fits perfectly into 3 SSE registers 
+    // i.e. 4 * 4 * 3 = 48 bytes = 3 * 16 bytes (SSE registers are 128 bits = 16 bytes)
+    // It also fits into the CPU cache line (64 bytes > 48 bytes)
+    for (int y = 0; y < height; y += 4) {
+        for (int x = 0; x < width; x += 4) {
+            transpose_rgb_block_sse(
+                temp + (y * width + x) * CHANNELS_PER_PIXEL,
+                transposed + (x * height + y) * CHANNELS_PER_PIXEL,
+                width, height, 4
+            );
         }
     }
+
+    // Vertical Pass using SSE, since it is transposed, RGB is already seperated so we can process it using SSE directly
+    for (int y = 0; y < width; y++) {
+        for (int x = 0; x < height; x += 4) {
+            __m128 sum_red = _mm_setzero_ps();
+            __m128 sum_green = _mm_setzero_ps();
+            __m128 sum_blue = _mm_setzero_ps();
+
+            for (int k = -range; k <= range; k++) {
+                int y_offset = y + k;
+                if (y_offset >= 0 && y_offset < width) {
+
+                    // Load the data directly into registers!
+                    __m128 red_ps = _mm_cvtepi32_ps(_mm_cvtepu8_epi32(
+                        _mm_loadu_si128((__m128i*)&transposed[(y_offset * height + x) * CHANNELS_PER_PIXEL])
+                    ));
+                    __m128 green_ps = _mm_cvtepi32_ps(_mm_cvtepu8_epi32(
+                        _mm_loadu_si128((__m128i*)&transposed[(y_offset * height + x + 1) * CHANNELS_PER_PIXEL])
+                    ));
+                    __m128 blue_ps = _mm_cvtepi32_ps(_mm_cvtepu8_epi32(
+                        _mm_loadu_si128((__m128i*)&transposed[(y_offset * height + x + 2) * CHANNELS_PER_PIXEL])
+                    ));
+
+                    // Multiply and accumulate
+                    __m128 weight = _mm_set1_ps(kernel[k + range]);
+                    sum_red = _mm_add_ps(sum_red, _mm_mul_ps(red_ps, weight));
+                    sum_green = _mm_add_ps(sum_green, _mm_mul_ps(green_ps, weight));
+                    sum_blue = _mm_add_ps(sum_blue, _mm_mul_ps(blue_ps, weight));
+                }
+            }
+
+            // Store results
+            store_rgb_results(image + (x * width + y) * CHANNELS_PER_PIXEL,
+                            sum_red, sum_green, sum_blue);
+        }
+    }
+    free(transposed);
+    free(temp);
+    free(kernel);
+    free(padded_image);
+}
+
+void transpose_rgb_block_sse(unsigned char* input, unsigned char* output, int width, int height, int block_size) {
+
+    __m128i row0, row1, row2, row3;
     
-    free(temp); // release memory allocated for temp buffer
+    // Load 4 rows of RGB data (12 bytes each)
+    row0 = _mm_loadu_si128((__m128i*)&input[0]);
+    row1 = _mm_loadu_si128((__m128i*)&input[width * 3]);
+    row2 = _mm_loadu_si128((__m128i*)&input[width * 6]);
+    row3 = _mm_loadu_si128((__m128i*)&input[width * 9]);
+
+    // Shuffle masks for RGB separation
+    __m128i mask_red = _mm_set_epi8(0x80,0x80,0x80,0x80, 12,9,6,3, 0x80,0x80,0x80,0x80, 8,5,2,0);
+    __m128i mask_green = _mm_set_epi8(0x80,0x80,0x80,0x80, 13,10,7,4, 0x80,0x80,0x80,0x80, 9,6,3,1);
+    __m128i mask_blue = _mm_set_epi8(0x80,0x80,0x80,0x80, 14,11,8,5, 0x80,0x80,0x80,0x80, 10,7,4,2);
+
+    // Separate channels and store
+    __m128i red_vals = _mm_shuffle_epi8(row0, mask_red);
+    __m128i green_vals = _mm_shuffle_epi8(row0, mask_green);
+    __m128i blue_vals = _mm_shuffle_epi8(row0, mask_blue);
+
+    // Store transposed data
+    _mm_storeu_si128((__m128i*)&output[0], red_vals);
+    _mm_storeu_si128((__m128i*)&output[width], green_vals);
+    _mm_storeu_si128((__m128i*)&output[width * 2], blue_vals);
+}
+
+void store_rgb_results(unsigned char* output, __m128 red, __m128 green, __m128 blue){
+    //placeholder to re-interleave the rgb values
 }
 
 void countdown(int seconds){
@@ -344,7 +477,7 @@ void countdown(int seconds){
 int main(){
 
     // Iteratively benchmark each filtering technique and record the parameters (technique, sigma, kernel_size, cpu_time, wall_time) in an array
-    int techniques[] = {1, 2}; // 1 = base, 2 = seperable
+    int techniques[] = {1, 2, 3}; // 1 = base, 2 = seperable, 3 = SSE
     int n_techniques = sizeof(techniques) / sizeof(techniques[0]);
     int total_results = n_techniques * 8; // total # of iterations =  n_techniques*(max_sigma - starting_sigma)/step_size + 1 = n_techniques*(4 - 0.5)/0.5 + 1 = n_techniques*8
     BenchmarkResult *results = malloc(total_results * sizeof(BenchmarkResult)); // Total # iterations * size of struct = total bytes of memory we need to allocate

@@ -4,7 +4,7 @@
 TARGET = gaussian_filter
 SRC = src/main.c inc/lodepng/lodepng.c
 CC = gcc
-CFLAGS = -O2 -Wall -Wextra -Iinc/lodepng
+CFLAGS = -O2 -Wall -Wextra -Iinc/lodepng -mssse3 -msse4.1
 LDFLAGS = -lm
 
 all: $(TARGET)

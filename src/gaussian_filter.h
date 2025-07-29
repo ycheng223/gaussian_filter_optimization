@@ -8,6 +8,12 @@
 #include <math.h>
 #include <time.h>
 
+// SSE Libraries
+#include <immintrin.h> // Base SSE intrinsics
+#include <emmintrin.h> // SSE2 intrinsics (_mm_loadu_si128, _mm_setzero_ps)
+#include <tmmintrin.h> // SSE3 intrinsics (_mm_shuffle_epi8)
+#include <smmintrin.h>  // SSE4 intrinsics (_mm_cvtepu8_epi32)
+
 // Additional Libraries
 #include "lodepng.h" // image (png only) encoder and decoder optimized to balance speed and ease-of-use
 
@@ -26,8 +32,6 @@ typedef struct {
     double cpu_time;
     double wall_time;
 } BenchmarkResult; // For storing benchmark results and parameters per iteration
-
-
 
 // Function declarations
 
@@ -51,7 +55,17 @@ void gaussian_filter_base(unsigned char* image, int width, int height, float sig
 void gaussian_filter_separable(unsigned char* image, int width, int height, float sigma, int kernel_size);
 // apply 2D gaussian filter by decomposing it into the product of 2 1D gaussian filters
 
+void gaussian_filter_sse(unsigned char* image, int width, int height, float sigma, int kernel_size);
+// apply 2D gaussian filter by decomposing it into the product of 2 1D gaussian filters
+
 void measure_filter_time(unsigned char* image, int width, int height, float sigma, int kernel_size, int filter_choice, BenchmarkResult *result);
 // measure the cpu time and wall time required to apply the gaussian filter
+
+void transpose_rgb_block_sse(unsigned char* input, unsigned char* output, int width, int height, int block_size);
+// tranpose block of RGB values so we can apply the horizontal filter correctly and efficiently using SSE
+
+void store_rgb_results(unsigned char* output, __m128 red, __m128 green, __m128 blue);
+// Store RGB results from SSE registers back to memory, converting from float to unsigned char
+
 
 #endif // GAUSSIAN_FILTER_H
