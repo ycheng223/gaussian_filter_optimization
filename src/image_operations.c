@@ -6,9 +6,10 @@ void image_decode(const char* filename, int kernel_size, float sigma,
 
     unsigned error;
     unsigned char* image = 0;
-    int width, height;
-    char input_path[256];
-    char output_path[256];
+    int width = 0; // initialize to 0, lodepng_decode24_file will write the dimensions in
+    int height = 0; // same as above
+    char input_path[512];
+    char output_path[512];
     
     // Construct absolute paths to input and output folders
     snprintf(input_path, sizeof(input_path), "./input/%s", filename);

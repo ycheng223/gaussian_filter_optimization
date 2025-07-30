@@ -4,7 +4,7 @@
 #include "common.h"
 
 // Utility functions
-unsigned char* image_padding_transform(unsigned char* image, int width, int height, int range);
+PaddedImage* image_padding_transform(unsigned char* image, int width, int height, int range);
 
 unsigned char* transpose_rgb_block_sse(unsigned char* input, int width, int height);
 
