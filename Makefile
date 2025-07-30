@@ -4,10 +4,10 @@
 TARGET = gaussian_filter
 
 SRC = src/main.c \
-      src/gaussian_filtere.c \
+      src/gaussian_filter.c \
       src/gaussian_processing.c \
       src/utility.c \
-      src/image_ops.c \
+      src/image_operations.c \
       inc/lodepng/lodepng.c
 
 CC = gcc

@@ -32,7 +32,7 @@ int main(){
     
     for(int choice = 0; choice < n_techniques; choice++){ // For each filtering technique...
         filter_choice = techniques[choice];
-        for(int i = 1; i <= n_sigma_steps; i++){
+        for(int i = 0; i <= n_sigma_steps; i++){
 
             float sigma = MIN_SIGMA + i * SIGMA_STEP; // Calculate the current sigma value
             int kernel_size = 2*(int)ceil(3*sigma) + 1; // First, calculate an acceptable kernel size given the sigma level

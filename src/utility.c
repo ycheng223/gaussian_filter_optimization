@@ -1,4 +1,5 @@
 #include "gaussian_filter.h"
+#include "utility.h"
 
 
 
@@ -60,7 +61,7 @@ unsigned char* image_padding_transform(unsigned char* image, int width, int heig
     return padded_img;
 }
 
-// Helper function to deal with the edges of image -> if kernel extends beyond the edges 
+// Helper function to deal with the edges of image -> if kernel extends beyond the edges
 // of the image, fill it with the pixel value of the nearest edge and update the image data
 int border_clamp(int width, int height, int x, int y) {
     int clamped_x = x;
@@ -76,7 +77,8 @@ int border_clamp(int width, int height, int x, int y) {
 }
 
 
-unsigned char* transpose_rgb_block_sse(unsigned char* input, unsigned char* output, int width, int height) {
+//transposes image and seperates it into seperate blocks of r, g, and b in memory
+unsigned char* transpose_rgb_block_sse(unsigned char* input, int width, int height) {
 
     // Allocate memory for transposed data
     unsigned char* transposed = (unsigned char*)malloc(width * height * CHANNELS_PER_PIXEL);
@@ -85,39 +87,51 @@ unsigned char* transpose_rgb_block_sse(unsigned char* input, unsigned char* outp
         return NULL;
     }
 
-    // Transpose the data in 4x4 blocks
-    for (int y = 0; y < height; y += 4) {
-        for (int x = 0; x < width; x += 4) {
-            __m128i row0, row1, row2, row3;
-            
-            // Calculate input/output positions
-            unsigned char* in_ptr = input + (y * width + x) * CHANNELS_PER_PIXEL;
-            unsigned char* out_ptr = transposed + (x * height + y) * CHANNELS_PER_PIXEL;
-            
-            // Load 4 rows of RGB data (12 bytes each)
-            row0 = _mm_loadu_si128((__m128i*)&in_ptr[0]);
-            row1 = _mm_loadu_si128((__m128i*)&in_ptr[width * 3]);
-            row2 = _mm_loadu_si128((__m128i*)&in_ptr[width * 6]);
-            row3 = _mm_loadu_si128((__m128i*)&in_ptr[width * 9]);
+    // Transpose the data in 4x4 blocks using SSE
+        for (int y = 0; y < height; y += 4) {
+            for (int x = 0; x < width; x += 4) {
+                __m128i row0, row1, row2, row3;
+                
+                // Calculate input/output positions
+                unsigned char* in_ptr = input + (y * width + x) * CHANNELS_PER_PIXEL; // offset memory start position from initial input image pointer
+                unsigned char* out_ptr = transposed + (x * height + y) * CHANNELS_PER_PIXEL; // transposed offset memory start position (i.e. y becomes x and vice versa)
+                
+                // Load 4 rows of RGB data into 4 SSE registeres at in one go
+                row0 = _mm_loadu_si128((__m128i*)&in_ptr[0]); // load first 16 bytes of data from memory position specified by in_ptr
+                row1 = _mm_loadu_si128((__m128i*)&in_ptr[width * 3]); // second 16 bytes...
+                row2 = _mm_loadu_si128((__m128i*)&in_ptr[width * 6]); // and so on...
+                row3 = _mm_loadu_si128((__m128i*)&in_ptr[width * 9]);
 
-            // Shuffle masks for RGB separation
-            __m128i mask_red = _mm_set_epi8(0x80,0x80,0x80,0x80, 12,9,6,3, 0x80,0x80,0x80,0x80, 8,5,2,0);
-            __m128i mask_green = _mm_set_epi8(0x80,0x80,0x80,0x80, 13,10,7,4, 0x80,0x80,0x80,0x80, 9,6,3,1);
-            __m128i mask_blue = _mm_set_epi8(0x80,0x80,0x80,0x80, 14,11,8,5, 0x80,0x80,0x80,0x80, 10,7,4,2);
+                // Process all 4 rows
+                for (int i = 0; i < 4; i++) {
+                    __m128i current_row;
+                    switch(i) {
+                        case 0: current_row = row0; break;
+                        case 1: current_row = row1; break;
+                        case 2: current_row = row2; break;
+                        case 3: current_row = row3; break;
+                    }
 
-            // Separate channels and store
-            __m128i red_vals = _mm_shuffle_epi8(row0, mask_red);
-            __m128i green_vals = _mm_shuffle_epi8(row0, mask_green);
-            __m128i blue_vals = _mm_shuffle_epi8(row0, mask_blue);
+                    // Initialize 3 SSE registers to store shuffle masks for RGB separation
+                    __m128i mask_red = _mm_set_epi8(0x80,0x80,0x80,0x80, 12,9,6,3,0, 0x80,0x80,0x80,0x80,0x80,0x80,0x80); // Result: [0 0 0 0 R4 R3 R2 R1 R0 0 0 0 0 0 0 0]
+                    __m128i mask_green = _mm_set_epi8(0x80,0x80,0x80,0x80, 13,10,7,4,1, 0x80,0x80,0x80,0x80,0x80,0x80,0x80); // Same as above we are only adding greens (offset 1)
+                    __m128i mask_blue = _mm_set_epi8(0x80,0x80,0x80,0x80, 14,11,8,5,2, 0x80,0x80,0x80,0x80,0x80,0x80,0x80); // Same as above except for blues (offset 2)
 
-            // Store transposed data
-            _mm_storeu_si128((__m128i*)&out_ptr[0], red_vals);
-            _mm_storeu_si128((__m128i*)&out_ptr[height], green_vals);
-            _mm_storeu_si128((__m128i*)&out_ptr[height * 2], blue_vals);
+                    // Initialize 3 more SSE registers to apply the shuffle on the current row to seperate RGB and store
+                    __m128i red_vals = _mm_shuffle_epi8(current_row, mask_red);
+                    __m128i green_vals = _mm_shuffle_epi8(current_row, mask_green);
+                    __m128i blue_vals = _mm_shuffle_epi8(current_row, mask_blue);
+
+                    // Store transposed data, offsetting for each row
+                    unsigned char* block_ptr = out_ptr + i * CHANNELS_PER_PIXEL * height;
+                    _mm_storeu_si128((__m128i*)block_ptr, red_vals);
+                    _mm_storeu_si128((__m128i*)(block_ptr + height * CHANNELS_PER_PIXEL), green_vals);
+                    _mm_storeu_si128((__m128i*)(block_ptr + 2 * height * CHANNELS_PER_PIXEL), blue_vals);
+                }
+            }
         }
-    }
 
-    return transposed;
+        return transposed;
 }
 
 
@@ -216,8 +230,11 @@ void measure_filter_time(unsigned char* image, int width, int height, float sigm
         printf("Using Separable Gaussian Filter...\n");
         gaussian_filter_separable(image, width, height, sigma, kernel_size);
     } else if (filter_choice == 3) {
-        printf("Using Seperable Gaussian Filter (SSE)...\n");
-        gaussian_filter_sse(image, width, height, sigma, kernel_size);
+        printf("Using Base SSE Sep. Gaussian Filter (Base SSE)...\n");
+        gaussian_filter_sse_base(image, width, height, sigma, kernel_size);
+    } else if (filter_choice == 4) {
+        printf("Using SSE Load Shuffle Sep. Gaussian Filter...\n");
+        gaussian_filter_sse_shuffle(image, width, height, sigma, kernel_size);
     } else {
         fprintf(stderr, "Invalid filter choice: %d\n", filter_choice);
         return;

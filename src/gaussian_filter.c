@@ -17,7 +17,7 @@ void gaussian_filter_base(unsigned char* image, int width, int height, float sig
     }
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
-            process_kernel_sse_base(image, temp, x, y, width, height, sigma, range);
+            process_kernel_base(image, temp, x, y, width, height, sigma, range);
         }
     }
 
@@ -154,7 +154,7 @@ void gaussian_filter_sse_shuffle(unsigned char* image, int width, int height, fl
                             x, range, padded_width, &sum_red, &sum_green, &sum_blue);
 
 
-            unsigned char* temp_loc = temp + (x * width + y) * CHANNELS_PER_PIXEL;
+            unsigned char* temp_loc = temp + (y * width + x) * CHANNELS_PER_PIXEL;
             store_rgb_results(temp_loc, sum_red, sum_green, sum_blue);
         }
     }

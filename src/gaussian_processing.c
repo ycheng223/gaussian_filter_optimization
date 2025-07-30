@@ -2,7 +2,7 @@
 
 
 // Precompute kernel weights
-static float* precompute_gaussian_kernel(int kernel_size, float sigma) {
+float* precompute_gaussian_kernel(int kernel_size, float sigma) {
     int range = kernel_size / 2;
     float* kernel = (float*)malloc(kernel_size * sizeof(float));
     
@@ -30,7 +30,7 @@ static float* precompute_gaussian_kernel(int kernel_size, float sigma) {
 
 
 // Base case, 2D convolution using a moving window for the kernel
-static void process_kernel_base(unsigned char* image, unsigned char* temp, 
+void process_kernel_base(unsigned char* image, unsigned char* temp, 
                               int x, int y, int width, int height,
                               float sigma, int range) {
     // Process each color channel
@@ -57,7 +57,7 @@ static void process_kernel_base(unsigned char* image, unsigned char* temp,
 
 
 // Seperable case
-static void process_separable_kernel (unsigned char* input, unsigned char* output,
+void process_separable_kernel (unsigned char* input, unsigned char* output,
                                    int x, int y, int width, int height,
                                    float sigma, int range, int is_vertical) {
 
@@ -90,7 +90,7 @@ static void process_separable_kernel (unsigned char* input, unsigned char* outpu
 }
 
 
-static void process_sse_base(unsigned char* input, float* kernel,
+void process_sse_base(unsigned char* input, float* kernel,
                            int x, int y, int width, int height, int range,
                            __m128* sum_red, __m128* sum_green, __m128* sum_blue,
                            int is_vertical) {
@@ -139,13 +139,16 @@ static void process_sse_base(unsigned char* input, float* kernel,
 // be stored in 3 additional 128 bit registers with each of these registers only containing intensity values for a single color (these are the DESTINATION registers). 
 // This ensures that we can apply the gaussian filter operations both accurately and with parallelism.
 
-static void process_sse_shuffle (unsigned char* padded_image, 
+void process_sse_shuffle (unsigned char* padded_image, 
                                     float* kernel, const __m128i mask_red, 
                                     const __m128i mask_green, const __m128i mask_blue, int x, int range, 
                                     int padded_width, __m128* sum_red, __m128* sum_green, __m128* sum_blue) {
     
-    for(int k = 0; k < range; k++) { 
-        int data_offset = 3*(x + range + k) * 3*(range + k) * padded_width;
+    for (int k = -range; k <= range; k++) { 
+        
+        int row = range;  // Current row in padded coordinates
+        int col = x + range + k;  // Current column in padded coordinates
+        int data_offset = (row * padded_width + col) * CHANNELS_PER_PIXEL;
 
         // load 16 bytes from the padded image into SSE register at location specified by k + offset
         __m128i input_data = _mm_loadu_si128(
@@ -175,7 +178,7 @@ static void process_sse_shuffle (unsigned char* padded_image,
     }
 }
 
-static void process_sse_shuffle_vertical (unsigned char* transposed, float* kernel,
+void process_sse_shuffle_vertical (unsigned char* transposed, float* kernel,
                                      int x, int y, int range, int height, int width,
                                      __m128* sum_red, __m128* sum_green, __m128* sum_blue) {
     
