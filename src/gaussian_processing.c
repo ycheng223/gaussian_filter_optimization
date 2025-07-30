@@ -51,7 +51,7 @@ void process_kernel_base(unsigned char* image, unsigned char* temp,
             }
         }
         
-        temp[3 * (y * width + x) + c] = (unsigned char)fminf(fmaxf(sum / weight_sum, 0.0f), 255.0f);
+        temp[ROW_MAJOR_OFFSET(x, y, width) + c] = (unsigned char)fminf(fmaxf(sum / weight_sum, 0.0f), 255.0f);
     }
 }
 
@@ -85,7 +85,7 @@ void process_separable_kernel (unsigned char* input, unsigned char* output,
             weight_sum += weight;
         }
         
-        output[3 * (y * width + x) + c] = (unsigned char)fminf(fmaxf(sum / weight_sum, 0.0f), 255.0f);
+        output[ROW_MAJOR_OFFSET(x, y, width) + c] = (unsigned char)fminf(fmaxf(sum / weight_sum, 0.0f), 255.0f);
     }
 }
 
@@ -144,11 +144,13 @@ void process_sse_shuffle (unsigned char* padded_image,
                                     const __m128i mask_green, const __m128i mask_blue, int x, int range, 
                                     int padded_width, __m128* sum_red, __m128* sum_green, __m128* sum_blue) {
     
+    assert((x + 3) < padded_width); // Check to see nothing goes out of bounds
+                                        
     for (int k = -range; k <= range; k++) { 
         
         int row = range;  // Current row in padded coordinates
         int col = x + range + k;  // Current column in padded coordinates
-        int data_offset = (row * padded_width + col) * CHANNELS_PER_PIXEL;
+        int data_offset = ROW_MAJOR_OFFSET(col, row, padded_width);
 
         // load 16 bytes from the padded image into SSE register at location specified by k + offset
         __m128i input_data = _mm_loadu_si128(
@@ -189,13 +191,13 @@ void process_sse_shuffle_vertical (unsigned char* transposed, float* kernel,
         if (y_offset >= 0 && y_offset < width) {
             // Since data is transposed, RGB channels are already separated
             __m128 red_ps = _mm_cvtepi32_ps(_mm_cvtepu8_epi32(
-                _mm_loadu_si128((__m128i*)&transposed[(y_offset * height + x) * CHANNELS_PER_PIXEL])
+                _mm_loadu_si128((__m128i*)&transposed[ROW_MAJOR_OFFSET(x, y_offset, height)])
             ));
             __m128 green_ps = _mm_cvtepi32_ps(_mm_cvtepu8_epi32(
-                _mm_loadu_si128((__m128i*)&transposed[(y_offset * height + x + height) * CHANNELS_PER_PIXEL])
+                _mm_loadu_si128((__m128i*)&transposed[ROW_MAJOR_OFFSET(x + height, y_offset, height)])
             ));
             __m128 blue_ps = _mm_cvtepi32_ps(_mm_cvtepu8_epi32(
-                _mm_loadu_si128((__m128i*)&transposed[(y_offset * height + x + height * 2) * CHANNELS_PER_PIXEL])
+                _mm_loadu_si128((__m128i*)&transposed[ROW_MAJOR_OFFSET(x + height * 2, y_offset, height)])
             ));
 
             // Apply gaussian weights

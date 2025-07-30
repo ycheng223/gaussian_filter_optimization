@@ -9,6 +9,9 @@
 #include <time.h>
 #include <stdbool.h>
 
+// Debugging Libraries
+#include <assert.h>
+
 // SSE Libraries
 #include <immintrin.h>
 #include <emmintrin.h>
@@ -20,6 +23,16 @@
 #define MIN_SIGMA 0.5
 #define MAX_SIGMA 2
 #define SIGMA_STEP 0.5
+#define SSE_BLOCK_SIZE 4
+
+// Image Dimension Constants
+#define PADDED_IMG_SIZE(width, height) ((width) * (height) * CHANNELS_PER_PIXEL)
+#define PADDED_ROW_SIZE(width) ((width) * CHANNELS_PER_PIXEL)
+#define PIXEL_OFFSET(x, y, width) (((y) * (width) + (x)) * CHANNELS_PER_PIXEL)
+
+// Memory Index Constants
+#define ROW_MAJOR_OFFSET(x, y, width) (((y) * (width) + (x)) * CHANNELS_PER_PIXEL)
+#define COL_MAJOR_OFFSET(x, y, height) (((x) * (height) + (y)) * CHANNELS_PER_PIXEL)
 
 // Common data structures
 typedef struct {

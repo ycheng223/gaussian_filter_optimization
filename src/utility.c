@@ -11,19 +11,19 @@ PaddedImage* image_padding_transform(unsigned char* image, int width, int height
     int padded_width_initial = width + range * 2;
     int padded_height_initial = height + range * 2;
 
-    // Is it divisible by 4?
-    int width_remainder = padded_width_initial % 4;
-    int height_remainder = padded_height_initial % 4;
+    // Is it divisible by 16?
+    int width_remainder = padded_width_initial % 16;
+    int height_remainder = padded_height_initial % 16;
 
-    // If yes then no need to pad more (0), if not pad with just enough to make it divisible (i.e. 4 - remainder)
-    int extra_width = width_remainder ? (4 - width_remainder) : 0;
-    int extra_height = height_remainder ? (4 - height_remainder) : 0;
+    // If yes then no need to pad more (0), if not pad with just enough to make it divisible (i.e. 16 - remainder)
+    int extra_width = width_remainder ? (16 - width_remainder) : 0;
+    int extra_height = height_remainder ? (16 - height_remainder) : 0;
 
     // Final padded dimensions
     int padded_width = padded_width_initial + extra_width;
     int padded_height = padded_height_initial + extra_height;
     
-    unsigned char* padded_img = (unsigned char*)malloc(padded_width * padded_height * CHANNELS_PER_PIXEL);
+    unsigned char* padded_img = (unsigned char*)malloc(PADDED_IMG_SIZE(padded_width, padded_height));
     if (!padded_img) {
         fprintf(stderr, "Failed to allocate padded image buffer\n");
         return NULL;
@@ -31,46 +31,42 @@ PaddedImage* image_padding_transform(unsigned char* image, int width, int height
 
     // Copy the original image into the padded image row by row directly from memory, offsetting for padding
     for(int y = 0; y < height; y++) { // For each row in the image...
-        int src_row_start_position = y * width * CHANNELS_PER_PIXEL; // Get the position of the start of the row in the original image (in memory i.e. 1D row-major array)
-        int dest_row_start_position = (y + range) // offset for padded rows on top of image
-                                        * padded_width // row-major offset, this also accounts for the padding on the right side of the image
-                                        + (range) // offset for padded rows on the left of image
-                                        * CHANNELS_PER_PIXEL; // 3 RGB values per pixel
-
+        int src_row_start_position = PADDED_ROW_SIZE(y * width); // Get the position of the start of the row in the original image (in memory i.e. 1D row-major array)
+        int dest_row_start_position = ROW_MAJOR_OFFSET(range, y + range, padded_width); // offset for padded rows on top of image and left
         memcpy(padded_img + dest_row_start_position, 
                 image + src_row_start_position, 
-                width * CHANNELS_PER_PIXEL); // Copy the original row into mapped memory locations of the padded image
+                PADDED_ROW_SIZE(width)); // Copy the original row into mapped memory locations of the padded image
     }
 
     // Pad the left and right edges of the image
     for (int y = range; y < padded_height - range; y++) { // For each row in the padded image, skipping the top and bottom padded rows
         memset(
-            padded_img + y * padded_width * CHANNELS_PER_PIXEL,
-            padded_img[y * padded_width * CHANNELS_PER_PIXEL + range * CHANNELS_PER_PIXEL],
-            range * CHANNELS_PER_PIXEL
+            padded_img + PADDED_ROW_SIZE(y * padded_width),
+            padded_img[ROW_MAJOR_OFFSET(range, y, padded_width)],
+            PADDED_ROW_SIZE(range)
         ); // Fill the entire left edge of that row with the first pixel of the row
         memset(
-            padded_img + (y * padded_width + width + range) * CHANNELS_PER_PIXEL,
-            padded_img[(y * padded_width + width + range - 1) * CHANNELS_PER_PIXEL],
-            range * CHANNELS_PER_PIXEL
+            padded_img + ROW_MAJOR_OFFSET(width + range, y, padded_width),
+            padded_img[ROW_MAJOR_OFFSET(width + range - 1, y, padded_width)],
+            PADDED_ROW_SIZE(range)
         ); // Fill the entire right edge of that row with the last pixel of the row
     }
 
     // Now pad the top and bottom edges of the image by copying the first and last rows respectively
     for (int y = 0; y < range; y++) { // start from the top of the padded image and go down to where the padding ends
         memcpy(
-            padded_img + y * padded_width * CHANNELS_PER_PIXEL,
-            padded_img + range * padded_width * CHANNELS_PER_PIXEL,
-            padded_width * CHANNELS_PER_PIXEL
+            padded_img + PADDED_ROW_SIZE(y * padded_width),
+            padded_img + PADDED_ROW_SIZE(range * padded_width),
+            PADDED_ROW_SIZE(padded_width)
         ); // Fill top border by copying the first row of the image
     }
 
     // Fill bottom border by copying the last valid row
     for (int y = 0; y < range; y++) { // start from the bottom of the padded image and go up...
         memcpy(
-            padded_img + (padded_height - 1 - y) * padded_width * CHANNELS_PER_PIXEL,
-            padded_img + (padded_height - 1 - range) * padded_width * CHANNELS_PER_PIXEL,
-            padded_width * CHANNELS_PER_PIXEL
+            padded_img + PADDED_ROW_SIZE((padded_height - 1 - y) * padded_width),
+            padded_img + PADDED_ROW_SIZE((padded_height - 1 - range) * padded_width),
+            PADDED_ROW_SIZE(padded_width)
         ); // Same logic as the top border except we copy the last row of the image
     }
 
@@ -104,7 +100,26 @@ int border_clamp(int width, int height, int x, int y) {
 }
 
 
-//transposes image and seperates it into seperate blocks of r, g, and b in memory
+// transposes image and seperates it into seperate blocks of r, g, and b in memory
+unsigned char* transpose_rgb_base(unsigned char* input, int width, int height) {
+    unsigned char* transposed = (unsigned char*)malloc(PADDED_IMG_SIZE(width, height));
+    if (!transposed) {
+        fprintf(stderr, "Failed to allocate transpose buffer\n");
+        return NULL;
+    }
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            for (int c = 0; c < CHANNELS_PER_PIXEL; ++c) {
+                transposed[COL_MAJOR_OFFSET(x, y, height) + c] =
+                    input[ROW_MAJOR_OFFSET(x, y, width) + c];
+            }
+        }
+    }
+    return transposed;
+}
+
+// SSE version of the above, transposes in 4x4 blocks
+// currently doesn't work as sse block reads past the buffer on the edges of the image
 unsigned char* transpose_rgb_block_sse(unsigned char* input, int width, int height) {
 
     // Allocate memory for transposed data

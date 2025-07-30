@@ -6,6 +6,8 @@
 // Utility functions
 PaddedImage* image_padding_transform(unsigned char* image, int width, int height, int range);
 
+unsigned char* transpose_rgb_base(unsigned char* input, int width, int height);
+
 unsigned char* transpose_rgb_block_sse(unsigned char* input, int width, int height);
 
 int border_clamp(int width, int height, int x, int y);

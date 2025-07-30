@@ -30,7 +30,7 @@ int main(){
     int filter_choice;
     int result_idx = 0;
     
-    for(int choice = 0; choice < n_techniques; choice++){ // For each filtering technique...
+    for(int choice = 3; choice < n_techniques; choice++){ // For each filtering technique...
         filter_choice = techniques[choice];
         for(int i = 0; i <= n_sigma_steps; i++){
 
