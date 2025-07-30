@@ -1,8 +1,15 @@
-# gcc -O2 -Wall -Wextra -I inc/lodepng src/main.c inc/lodepng/lodepng.c -o gaussian_filter -lm
+# gcc -O2 -Wall -Wextra -mssse3 -msse4.1 -I inc/lodepng src/main.c inc/lodepng/lodepng.c -o gaussian_filter -lm
 
 
 TARGET = gaussian_filter
-SRC = src/main.c inc/lodepng/lodepng.c
+
+SRC = src/main.c \
+      src/gaussian_filtere.c \
+      src/gaussian_processing.c \
+      src/utility.c \
+      src/image_ops.c \
+      inc/lodepng/lodepng.c
+
 CC = gcc
 CFLAGS = -O2 -Wall -Wextra -Iinc/lodepng -mssse3 -msse4.1
 LDFLAGS = -lm

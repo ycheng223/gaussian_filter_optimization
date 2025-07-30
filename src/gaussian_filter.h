@@ -1,71 +1,20 @@
 #ifndef GAUSSIAN_FILTER_H
 #define GAUSSIAN_FILTER_H
 
-// Standard Libraries
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <math.h>
-#include <time.h>
+#include "common.h"
+#include "image_operations.h"
+#include "utility.h"
+#include "gaussian_processing.h"
 
-// SSE Libraries
-#include <immintrin.h> // Base SSE intrinsics
-#include <emmintrin.h> // SSE2 intrinsics (_mm_loadu_si128, _mm_setzero_ps)
-#include <tmmintrin.h> // SSE3 intrinsics (_mm_shuffle_epi8)
-#include <smmintrin.h>  // SSE4 intrinsics (_mm_cvtepu8_epi32)
-
-// Additional Libraries
-#include "lodepng.h" // image (png only) encoder and decoder optimized to balance speed and ease-of-use
-
-
-// Constants
-#define CHANNELS_PER_PIXEL 3  // RGB but NO ALPHA
-#define MIN_SIGMA 0.5 // The initial (minimum) value of sigma, this is the first sigma value we will benchmark
-#define MAX_SIGMA 2 // This is the maximum value of sigma that we want to benchmark to
-#define SIGMA_STEP 0.5 // This is how much we want to increment sigma by each time we benchmark
-
-// Data Structures
-typedef struct {
-    int filter_choice;
-    int kernel_size;
-    float sigma;
-    double cpu_time;
-    double wall_time;
-} BenchmarkResult; // For storing benchmark results and parameters per iteration
-
-// Function declarations
-
-void image_encode(const char* filepath, const unsigned char* image, int width, int height);
-// Encode 1D array of RGB values in memory back into image and save this new tranformed image into "output" folder
-
-void image_decode(const char* filename, int kernel_size, float sigma, int filter_choice, BenchmarkResult *result);
-// Load image from "input" folder, decode, and store decoded rgb data contiguously into memory as 1D array, 3 channels per pixel (i.e. RGB, NO ALPHA)
-
-unsigned char* padded_image(unsigned char* image, int width, int height, int range);
-// Preprocess the image data expanding its borders up to the maximum reach of the kernel (determined by kernel_size), padding it with the nearest edge pixel value
-// This removes the need to do any border clamping or worry about edge cases when applying the gaussian filter
-
-int border_clamp(int width, int height, int x, int y);
-// Helper function to deal with the edges of image -> if kernel extends beyond the edges 
-// of the image, fill it with the pixel value of the nearest edge and update the image data
-
+// Filter implementations
 void gaussian_filter_base(unsigned char* image, int width, int height, float sigma, int kernel_size);
-// apply 2D gaussian filter on image
 
 void gaussian_filter_separable(unsigned char* image, int width, int height, float sigma, int kernel_size);
-// apply 2D gaussian filter by decomposing it into the product of 2 1D gaussian filters
 
-void gaussian_filter_sse(unsigned char* image, int width, int height, float sigma, int kernel_size);
-// apply 2D gaussian filter by decomposing it into the product of 2 1D gaussian filters
+void gaussian_filter_sse_base(unsigned char* image, int width, int height, float sigma, int kernel_size);
+
+void gaussian_filter_sse_shuffle(unsigned char* image, int width, int height, float sigma, int kernel_size);
 
 void measure_filter_time(unsigned char* image, int width, int height, float sigma, int kernel_size, int filter_choice, BenchmarkResult *result);
-// measure the cpu time and wall time required to apply the gaussian filter
-
-void transpose_rgb_block_sse(unsigned char* input, unsigned char* output, int width, int height, int block_size);
-// tranpose block of RGB values so we can apply the horizontal filter correctly and efficiently using SSE
-
-void store_rgb_results(unsigned char* output, __m128 red, __m128 green, __m128 blue);
-// Store RGB results from SSE registers back to memory, converting from float to unsigned char
-
 
 #endif // GAUSSIAN_FILTER_H
