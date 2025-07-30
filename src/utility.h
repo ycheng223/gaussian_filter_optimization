@@ -14,4 +14,6 @@ void store_rgb_results(unsigned char* output, __m128 red, __m128 green, __m128 b
 
 void print_statistics(BenchmarkResult* results, int count);
 
+void countdown(int seconds);
+
 #endif // UTILITY_H

@@ -122,9 +122,10 @@ unsigned char* transpose_rgb_block_sse(unsigned char* input, int width, int heig
                     __m128i green_vals = _mm_shuffle_epi8(current_row, mask_green);
                     __m128i blue_vals = _mm_shuffle_epi8(current_row, mask_blue);
 
-                    // Store transposed data, offsetting for each row
+                    // Store transposed data, offsetting for each row, by stacking the registers on 
+                    // top of each other, we create the transposed columns.
                     unsigned char* block_ptr = out_ptr + i * CHANNELS_PER_PIXEL * height;
-                    _mm_storeu_si128((__m128i*)block_ptr, red_vals);
+                    _mm_storeu_si128((__m128i*)block_ptr, red_vals); // store R values
                     _mm_storeu_si128((__m128i*)(block_ptr + height * CHANNELS_PER_PIXEL), green_vals);
                     _mm_storeu_si128((__m128i*)(block_ptr + 2 * height * CHANNELS_PER_PIXEL), blue_vals);
                 }
