@@ -180,7 +180,7 @@ void gaussian_filter_sse_shuffle(unsigned char* image, int width, int height, fl
     
     // Now onto the SSE horizontal pass...
     for(int y = 0; y < padded_height; y++) {
-        for(int x = 0; x < padded_width; x += 5) {  // Note: using 5 because we're processing RGB values
+        for(int x = 0; x < padded_width; x += 4) { // Process 4 pixels in parallel using SSE
             __m128 sum_red = _mm_setzero_ps();
             __m128 sum_green = _mm_setzero_ps();
             __m128 sum_blue = _mm_setzero_ps();
