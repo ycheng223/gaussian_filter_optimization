@@ -5,8 +5,8 @@
 #include "lodepng.h"
 
 // Image operations
-int image_encode(const char* filepath, const unsigned char* image_data, 
-                int width, int height, int filter_choice);
+int image_encode(const char* filename, const unsigned char* image_data, 
+                int width, int height, int filter_choice, int kernel_size);
 
 void image_decode(const char* filename, int kernel_size, float sigma, 
                  int filter_choice, BenchmarkResult *result);
