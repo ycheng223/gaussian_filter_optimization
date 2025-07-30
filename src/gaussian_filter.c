@@ -230,7 +230,7 @@ void gaussian_filter_sse_shuffle(unsigned char* image, int width, int height, fl
                                       &sum_red, &sum_green, &sum_blue);
             
             // Store in final buffer instead of original image
-            store_rgb_results(final + (x * padded_width + y) * CHANNELS_PER_PIXEL,
+            store_rgb_results(final + (y * padded_width + x) * CHANNELS_PER_PIXEL,
                             sum_red, sum_green, sum_blue);
         }
     }

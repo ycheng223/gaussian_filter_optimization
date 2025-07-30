@@ -105,7 +105,7 @@ int border_clamp(int width, int height, int x, int y) {
 
 
 //transposes image and seperates it into seperate blocks of r, g, and b in memory
-unsigned char* transpose_rgb_block_sse(unsigned char* input, int width, int height) {
+unsigned char* transpose_rgb_block_sse(unsigned char* input, int padded_width, int padded_height) {
 
     // Allocate memory for transposed data
     unsigned char* transposed = (unsigned char*)malloc(width * height * CHANNELS_PER_PIXEL);
