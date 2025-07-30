@@ -1,6 +1,7 @@
 {
     "files.associations": {
         "stdlib.h": "c",
-        "gaussian_filter.h": "c"
+        "gaussian_filter.h": "c",
+        "lodepng.h": "c"
     }
 }

@@ -3,9 +3,25 @@
 
 
 
-unsigned char* image_padding_transform(unsigned char* image, int width, int height, int range) {
-    int padded_width = width + range * 2;
-    int padded_height = height + range * 2;
+// Add padding to the image fo account for boundary overlap by the sliding kernel and ensure the image is divisble by four
+// Padded values are the clamped values at the closest border
+PaddedImage* image_padding_transform(unsigned char* image, int width, int height, int range) {
+
+    // First calculate the padding needed to offset range (i.e. the sliding kernel exceeds the image boundary)
+    int padded_width_initial = width + range * 2;
+    int padded_height_initial = height + range * 2;
+
+    // Is it divisible by 4?
+    int width_remainder = padded_width_initial % 4;
+    int height_remainder = padded_height_initial % 4;
+
+    // If yes then no need to pad more (0), if not pad with just enough to make it divisible (i.e. 4 - remainder)
+    int extra_width = width_remainder ? (4 - width_remainder) : 0;
+    int extra_height = height_remainder ? (4 - height_remainder) : 0;
+
+    // Final padded dimensions
+    int padded_width = padded_width_initial + extra_width;
+    int padded_height = padded_height_initial + extra_height;
     
     unsigned char* padded_img = (unsigned char*)malloc(padded_width * padded_height * CHANNELS_PER_PIXEL);
     if (!padded_img) {
@@ -15,7 +31,7 @@ unsigned char* image_padding_transform(unsigned char* image, int width, int heig
 
     // Copy the original image into the padded image row by row directly from memory, offsetting for padding
     for(int y = 0; y < height; y++) { // For each row in the image...
-        int src_row_start_position = y * width * CHANNELS_PER_PIXEL; // Get the position of the start of the row in the original image (in memory i.e. 1D row-major Array)
+        int src_row_start_position = y * width * CHANNELS_PER_PIXEL; // Get the position of the start of the row in the original image (in memory i.e. 1D row-major array)
         int dest_row_start_position = (y + range) // offset for padded rows on top of image
                                         * padded_width // row-major offset, this also accounts for the padding on the right side of the image
                                         + (range) // offset for padded rows on the left of image
@@ -58,7 +74,18 @@ unsigned char* image_padding_transform(unsigned char* image, int width, int heig
         ); // Same logic as the top border except we copy the last row of the image
     }
 
-    return padded_img;
+    // Finally save the dimensions in a struct (so we don't ahve to calculate it again) and return the struct
+    PaddedImage* padded_dimensions = (PaddedImage*)malloc(sizeof(PaddedImage));
+    if (!padded_dimensions) {
+        free(padded_img);
+        return NULL;
+    }
+
+    padded_dimensions->data = padded_img;
+    padded_dimensions->padded_width = padded_width;
+    padded_dimensions->padded_height = padded_height;
+
+    return padded_dimensions;
 }
 
 // Helper function to deal with the edges of image -> if kernel extends beyond the edges
@@ -136,6 +163,8 @@ unsigned char* transpose_rgb_block_sse(unsigned char* input, int width, int heig
 }
 
 
+// Convert float values from SSE processing back into integer, pack down 8 bits (0-255)
+// Re-interleave the RGB so we can rebuild the image
 void store_rgb_results(unsigned char* output, __m128 red, __m128 green, __m128 blue) {
     
     // Convert float values back to integers
@@ -148,18 +177,19 @@ void store_rgb_results(unsigned char* output, __m128 red, __m128 green, __m128 b
     __m128i bb_packed = _mm_packs_epi32(blue_int, blue_int);
 
     // Pack 16-bit integers into 8-bit unsigned integers with saturation
-    __m128i rgb_packed = _mm_packus_epi16(rg_packed, bb_packed);
+    __m128i rgb_packed = _mm_packus_epi16(rg_packed, bb_packed); // This is a 1D array with layout [R0 R1 .... G0 G1 .... B0 B1 ....]
 
     // Extract the individual bytes and interleave RGB values
-    unsigned char* rgb_ptr = (unsigned char*)&rgb_packed;
+    unsigned char* rgb_ptr = (unsigned char*)&rgb_packed; // points to register containing 1D array above
     for (int i = 0; i < 4; i++) {
-        output[i * 3] = rgb_ptr[i];          // R
-        output[i * 3 + 1] = rgb_ptr[i + 4];  // G
-        output[i * 3 + 2] = rgb_ptr[i + 8];  // B
+        output[i * 3] = rgb_ptr[i];          // insert ith value (1,2,3,4 -> these are R) into the correct positions in the interleaved RGB output (i.e. every 3rd position starting from 0)
+        output[i * 3 + 1] = rgb_ptr[i + 4];  // insert i+4th value (5,6,7,8 -> these are G) into ""
+        output[i * 3 + 2] = rgb_ptr[i + 8];  // same as above except will be blue values that are interleaved
     }
 }
 
 
+// Takes in data from Benchmark results and uses to compute summary statistics for each approach
 void print_statistics(BenchmarkResult* results, int count) {
     double base_cpu_total = 0.0, base_wall_total = 0.0;
     double sep_cpu_total = 0.0, sep_wall_total = 0.0;
@@ -167,6 +197,8 @@ void print_statistics(BenchmarkResult* results, int count) {
     double shuffle_cpu_total = 0.0, shuffle_wall_total = 0.0;
     int base_count = 0, sep_count = 0, sse_count = 0, shuffle_count = 0;
 
+
+    // Print total times for each filter_choice
     for (int i = 0; i < count; i++) {
         switch(results[i].filter_choice) {
             case 1: // Base
@@ -192,7 +224,7 @@ void print_statistics(BenchmarkResult* results, int count) {
         }
     }
 
-    // Print averages
+    // Print average times for each filter_choice
     printf("\nAverage Times:\n");
     if (base_count > 0)
         printf("Base:     CPU: %.3fms, Wall: %.3fms\n", 

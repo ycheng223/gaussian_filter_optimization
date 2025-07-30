@@ -30,4 +30,10 @@ typedef struct {
     double wall_time;
 } BenchmarkResult;
 
+typedef struct {
+    unsigned char* data;
+    int padded_width;
+    int padded_height;
+} PaddedImage;
+
 #endif // COMMON_H
