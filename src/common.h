@@ -8,6 +8,8 @@
 #include <math.h>
 #include <time.h>
 #include <stdbool.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 
 // Debugging Libraries
 #include <assert.h>
@@ -19,11 +21,12 @@
 #include <smmintrin.h>
 
 // Constants
-#define CHANNELS_PER_PIXEL 3
+#define CHANNELS_PER_PIXEL 4 // RGBA to align with SSE
 #define MIN_SIGMA 0.5
 #define MAX_SIGMA 2
 #define SIGMA_STEP 0.5
 #define SSE_BLOCK_SIZE 4
+#define STARTING_FILTER 1 // Which filter to start on (useful for debugging so we don't have to run all of them)
 
 // Image Dimension Constants
 #define PADDED_IMG_SIZE(width, height) ((width) * (height) * CHANNELS_PER_PIXEL)

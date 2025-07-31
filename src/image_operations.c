@@ -15,14 +15,14 @@ void image_decode(const char* filename, int kernel_size, float sigma,
     snprintf(input_path, sizeof(input_path), "./input/%s", filename);
     snprintf(output_path, sizeof(output_path), "./output/%s", filename);
 
-    error = lodepng_decode24_file(&image, (unsigned*)&width, (unsigned*)&height, input_path); // decode and store image contiguously into memory as 1D array, 3 channels per pixel (i.e. RGB, NO ALPHA)
+    error = lodepng_decode32_file(&image, (unsigned*)&width, (unsigned*)&height, input_path); // decode and store image contiguously into memory as 1D array, 3 channels per pixel (i.e. RGB, NO ALPHA)
     if(error) printf("error %u: %s\n", error, lodepng_error_text(error));
 
     //note: to include alpha, we would the the lodepng_decode32_file function
 
     else{
         measure_filter_time(image, width, height, sigma, kernel_size, filter_choice, result); // measure time and apply selected gaussian filter
-        image_encode(output_path, image, width, height, filter_choice, kernel_size); // re-encode as image and save to disc in "output" folder
+        image_encode(filename, image, width, height, filter_choice, kernel_size); // re-encode as image and save to disc in "output" folder
     }
 
     free(image);
@@ -39,6 +39,12 @@ int image_encode(const char* filename, const unsigned char* image_data,
     // Output filter names
     const char* filter_names[] = {"base", "separable", "sse_base", "sse_shuffle"};
 
+    // Ensure output directory exists
+    struct stat st = {0};
+    if (stat("output", &st) == -1) {
+        mkdir("output", 0700);
+    }
+
     // Truncate the extension (i.e. ".png")
     const char *dot = strrchr(filename, '.');
     size_t basename_len = dot ? (size_t)(dot - filename) : strlen(filename);
@@ -50,6 +56,7 @@ int image_encode(const char* filename, const unsigned char* image_data,
             (int)basename_len, filename, kernel_size, filter_names[filter_choice - 1]);
 
     // Save the image (standard lodepng method)
+    printf("Attempting to save to: %s\n", output_filename);
     unsigned error = lodepng_encode24_file(output_filename, image_data, width, height);
     if(error) {
         fprintf(stderr, "Error %u: %s\n", error, lodepng_error_text(error));
