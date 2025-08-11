@@ -10,7 +10,7 @@ void gaussian_filter_base(unsigned char* image, int width, int height, float sig
 
     int range = kernel_size / 2;
     // First we allocate a temp buffer for the convolution
-    unsigned char* temp = (unsigned char*)malloc(PADDED_IMG_SIZE(width, height)); //total dimension will be width * height * 3 channels (i.e. RGB)
+    unsigned char* temp = (unsigned char*)malloc(PADDED_IMG_SIZE(width, height)); //total dimension will be width * height * 4 channels (i.e. RGB)
     if (!temp) {
         fprintf(stderr, "Failed to allocate temp buffer\n");
         return;
@@ -101,8 +101,11 @@ void gaussian_filter_sse_base(unsigned char* image, int width, int height, float
             process_sse_base(padded_image, kernel, x, y, padded_width, padded_height, range,
                            &sum_red, &sum_green, &sum_blue, 0);
 
-            store_rgb_results(temp + ROW_MAJOR_OFFSET(x, y, padded_width),
-                            sum_red, sum_green, sum_blue);
+            store_rgb_results(
+                temp + ROW_MAJOR_OFFSET(x, y, padded_width),
+                sum_red, sum_green, sum_blue,
+                padded_image + ROW_MAJOR_OFFSET(x, y, padded_width)
+            );
         }
     }
 
@@ -119,8 +122,11 @@ void gaussian_filter_sse_base(unsigned char* image, int width, int height, float
             process_sse_base(temp, kernel, x, y, padded_width, padded_height, range,
                            &sum_red, &sum_green, &sum_blue, 1);
 
-            store_rgb_results(temp + ROW_MAJOR_OFFSET(x, y, padded_width),
-                            sum_red, sum_green, sum_blue);
+            store_rgb_results(
+                temp + ROW_MAJOR_OFFSET(x, y, padded_width),
+                sum_red, sum_green, sum_blue,
+                temp + ROW_MAJOR_OFFSET(x, y, padded_width)
+            );
         }
     }
 
@@ -189,7 +195,10 @@ void gaussian_filter_sse_shuffle(unsigned char* image, int width, int height, fl
                             x, range, padded_width, &sum_red, &sum_green, &sum_blue);
 
             unsigned char* temp_loc = temp + ROW_MAJOR_OFFSET(x, y, padded_width);
-            store_rgb_results(temp_loc, sum_red, sum_green, sum_blue);
+            store_rgb_results(
+                temp_loc, sum_red, sum_green, sum_blue,
+                padded_image + ROW_MAJOR_OFFSET(x, y, padded_width)
+            );
         }
     }
 
@@ -230,8 +239,11 @@ void gaussian_filter_sse_shuffle(unsigned char* image, int width, int height, fl
                                       &sum_red, &sum_green, &sum_blue);
             
             // Store in final buffer instead of original image
-            store_rgb_results(final + ROW_MAJOR_OFFSET(x, y, padded_height),
-                            sum_red, sum_green, sum_blue);
+            store_rgb_results(
+                final + ROW_MAJOR_OFFSET(x, y, padded_height),
+                sum_red, sum_green, sum_blue,
+                transposed_img + ROW_MAJOR_OFFSET(x, y, padded_height)
+            );
         }
     }
 

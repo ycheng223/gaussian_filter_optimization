@@ -57,7 +57,7 @@ int image_encode(const char* filename, const unsigned char* image_data,
 
     // Save the image (standard lodepng method)
     printf("Attempting to save to: %s\n", output_filename);
-    unsigned error = lodepng_encode24_file(output_filename, image_data, width, height);
+    unsigned error = lodepng_encode32_file(output_filename, image_data, width, height);
     if(error) {
         fprintf(stderr, "Error %u: %s\n", error, lodepng_error_text(error));
         return -1;

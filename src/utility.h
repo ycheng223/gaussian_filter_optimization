@@ -12,7 +12,7 @@ unsigned char* transpose_rgb_block_sse(unsigned char* input, int width, int heig
 
 int border_clamp(int width, int height, int x, int y);
 
-void store_rgb_results(unsigned char* output, __m128 red, __m128 green, __m128 blue);
+void store_rgb_results(unsigned char* output, __m128 red, __m128 green, __m128 blue, const unsigned char* input);
 
 void print_statistics(BenchmarkResult* results, int count);
 

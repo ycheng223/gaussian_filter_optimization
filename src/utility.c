@@ -179,9 +179,8 @@ unsigned char* transpose_rgb_block_sse(unsigned char* input, int width, int heig
 
 
 // Convert float values from SSE processing back into integer, pack down 8 bits (0-255)
-// Re-interleave the RGB so we can rebuild the image
-void store_rgb_results(unsigned char* output, __m128 red, __m128 green, __m128 blue) {
-    
+// Re-interleave the RGBA so we can rebuild the image
+void store_rgb_results(unsigned char* output, __m128 red, __m128 green, __m128 blue, const unsigned char* input) {
     // Convert float values back to integers
     __m128i red_int = _mm_cvtps_epi32(red);
     __m128i green_int = _mm_cvtps_epi32(green);
@@ -192,14 +191,15 @@ void store_rgb_results(unsigned char* output, __m128 red, __m128 green, __m128 b
     __m128i bb_packed = _mm_packs_epi32(blue_int, blue_int);
 
     // Pack 16-bit integers into 8-bit unsigned integers with saturation
-    __m128i rgb_packed = _mm_packus_epi16(rg_packed, bb_packed); // This is a 1D array with layout [R0 R1 .... G0 G1 .... B0 B1 ....]
+    __m128i rgb_packed = _mm_packus_epi16(rg_packed, bb_packed);
 
-    // Extract the individual bytes and interleave RGB values
-    unsigned char* rgb_ptr = (unsigned char*)&rgb_packed; // points to register containing 1D array above
+    // Extract the individual bytes and interleave RGBA values
+    unsigned char* rgb_ptr = (unsigned char*)&rgb_packed;
     for (int i = 0; i < 4; i++) {
-        output[i * 3] = rgb_ptr[i];          // insert ith value (1,2,3,4 -> these are R) into the correct positions in the interleaved RGB output (i.e. every 3rd position starting from 0)
-        output[i * 3 + 1] = rgb_ptr[i + 4];  // insert i+4th value (5,6,7,8 -> these are G) into ""
-        output[i * 3 + 2] = rgb_ptr[i + 8];  // same as above except will be blue values that are interleaved
+        output[i * 4 + 0] = rgb_ptr[i];         // R
+        output[i * 4 + 1] = rgb_ptr[i + 4];     // G
+        output[i * 4 + 2] = rgb_ptr[i + 8];     // B
+        output[i * 4 + 3] = input[i * 4 + 3];   // A (copied directly from input)
     }
 }
 
