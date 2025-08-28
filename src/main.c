@@ -1,4 +1,6 @@
 #include "gaussian_filter.h"
+#include "../inc/png_transform.h"
+#include "../inc/image_operations.h"
 
 
 

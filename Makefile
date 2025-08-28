@@ -8,10 +8,11 @@ SRC = src/main.c \
       src/gaussian_processing.c \
       src/utility.c \
       src/image_operations.c \
+      src/png_transform.c \
       inc/lodepng/lodepng.c
 
 CC = gcc
-CFLAGS = -O2 -Wall -Wextra -Iinc/lodepng -mssse3 -msse4.1
+CFLAGS = -O2 -Wall -Wextra -Iinc -Iinc/lodepng -mssse3 -msse4.1
 LDFLAGS = -lm
 
 all: $(TARGET)
