@@ -1,4 +1,9 @@
-#include "../inc/gaussian_filter.h"
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+#include "../inc/gaussian_processing.h"
+#include "../inc/image_operations.h"
 
 
 // Precompute kernel weights

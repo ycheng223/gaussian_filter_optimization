@@ -2,71 +2,45 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+
 #include "../inc/gaussian_filter.h"
 #include "../inc/png_transform.h"
 
-// Decode the image into 1D array of rgb values and load into a contiguous memory space
-void image_decode(const char* filename, int kernel_size, float sigma, 
-                int filter_choice, BenchmarkResult *result) {
+// Decode the image into a heap-allocated 1D array of RGBA bytes.
+// Returns pointer to image buffer on success (caller must free), NULL on error.
+// out_width/out_height are set when non-NULL.
+unsigned char* image_decode(const char* filename, int *out_width, int *out_height) {
 
     unsigned error;
-    unsigned char* image = 0;
-    int width = 0; // initialize to 0, lodepng_decode24_file will write the dimensions in
-    int height = 0; // same as above
+    unsigned char* image = NULL;
+    unsigned width = 0; // lodepng will write dimensions here
+    unsigned height = 0;
     char input_path[512];
-    char output_path[512];
     
-    // Construct absolute paths to input and output folders
+    // Construct absolute path to input folder
     snprintf(input_path, sizeof(input_path), "./input/%s", filename);
-    snprintf(output_path, sizeof(output_path), "./output/%s", filename);
 
-    error = lodepng_decode32_file(&image, (unsigned*)&width, (unsigned*)&height, input_path); // decode and store image contiguously into memory as 1D array, 3 channels per pixel (i.e. RGB, NO ALPHA)
-    if(error) printf("error %u: %s\n", error, lodepng_error_text(error));
-
-    //note: to exclude alpha, we would the the lodepng_decode24_file function
-
-    else{
-        measure_filter_time(image, width, height, sigma, kernel_size, filter_choice, result); // measure time and apply selected gaussian filter
-        image_encode(filename, image, width, height, filter_choice, kernel_size); // re-encode as image and save to disc in "output" folder
+    error = lodepng_decode32_file(&image, &width, &height, input_path);
+    if(error) {
+        fprintf(stderr, "error %u: %s\n", error, lodepng_error_text(error));
+        if(image) { free(image); image = NULL; }
+        return NULL;
     }
 
-    free(image);
+    if (out_width)  *out_width  = (int)width;
+    if (out_height) *out_height = (int)height;
 
-    image = NULL;
+    return image;
 }
 
-// Encode array of RGB values back into image to get back the transformed image after the gaussian filter is applied
-// Saves separate output images based on filter_choice so we can compare the results later
-int image_encode(const char* filename, const unsigned char* image_data, 
-                int width, int height, int filter_choice, int kernel_size) {
-
-    // Output filter names
-    const char* filter_names[] = {"base", "separable", "sse_base", "sse_shuffle"};
-
-    // Ensure output directory exists
-    struct stat st = {0};
-    if (stat("output", &st) == -1) {
-        mkdir("output", 0700);
-    }
-
-    // Truncate the extension (i.e. ".png")
-    const char *dot = strrchr(filename, '.');
-    size_t basename_len = dot ? (size_t)(dot - filename) : strlen(filename);
-
-    // Compose output filename: output/<filename>_k<kernel_size>_<filter>.png
-    char output_filename[2048];
-    snprintf(output_filename, sizeof(output_filename),
-            "output/%.*s_k%d_%s.png",
-            (int)basename_len, filename, kernel_size, filter_names[filter_choice - 1]);
-
-    // Save the image (standard lodepng method)
-    printf("Attempting to save to: %s\n", output_filename);
-    unsigned error = lodepng_encode32_file(output_filename, image_data, width, height);
-    if(error) {
+// Encode array of RGBA values back into image to get back the transformed image after the gaussian filter is applied
+// Returns a pointer to the encoded image data (free after image is saved)
+unsigned char* image_encode(const unsigned char* image_data, int width, int height, size_t* out_size) {
+    unsigned char* png_data = NULL;
+    unsigned error = lodepng_encode32(&png_data, out_size, image_data, width, height);
+    if (error) {
         fprintf(stderr, "Error %u: %s\n", error, lodepng_error_text(error));
-        return -1;
+        return NULL;
     }
-
-    printf("Saved processed image as: %s\n", output_filename);
-    return 0;
+    return png_data;
 }

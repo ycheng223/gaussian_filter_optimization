@@ -5,7 +5,7 @@
 #include <stdint.h>
 #include <emmintrin.h>
 #include <tmmintrin.h>
-#include "gaussian_filter.h"
+#include "common.h"
 
 // Padding and border operations
 PaddedImage* image_padding_transform(unsigned char* image, int width, int height, int range);

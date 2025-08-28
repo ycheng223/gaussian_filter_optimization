@@ -44,6 +44,8 @@ typedef struct {
     float sigma;
     double cpu_time;
     double wall_time;
+    int width;
+    int height;
 } BenchmarkResult;
 
 typedef struct {

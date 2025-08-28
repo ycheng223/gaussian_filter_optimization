@@ -1,4 +1,8 @@
 #include "../inc/gaussian_filter.h"
+#include "../inc/gaussian_processing.h"
+#include "../inc/image_operations.h"
+#include "../inc/utility.h"
+#include <string.h>
 
 void gaussian_filter_base(unsigned char* image, int width, int height, float sigma, int kernel_size){
 

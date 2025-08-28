@@ -1,8 +1,13 @@
-#include "gaussian_filter.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+#include <sys/stat.h>
+
+#include "../inc/gaussian_filter.h"
 #include "../inc/png_transform.h"
 #include "../inc/image_operations.h"
-
-
+#include "../inc/utility.h"
 
 /*---------------------------------------------MAIN----------------------------------------------------*/
 
@@ -11,7 +16,7 @@ int main(){
     // Iteratively benchmark each filtering technique and record the parameters (technique, sigma, kernel_size, cpu_time, wall_time) in an array
     int techniques[] = {1, 2, 3, 4}; // 1 = base, 2 = seperable, 3 = SSE_Base, 4 = SSE_Shuffle
     int n_techniques = sizeof(techniques) / sizeof(techniques[0]);
-    int total_results = n_techniques * 8; // total # of iterations =  n_techniques*(max_sigma - starting_sigma)/step_size + 1 = n_techniques*(4 - 0.5)/0.5 + 1 = n_techniques*8
+    int total_results = n_techniques * 8; // total # of iterations =  n_techniques*(max_sigma - starting_sigma)/step_size + 1 = n_techniques*8
     
     BenchmarkResult *results = malloc(total_results * sizeof(BenchmarkResult)); // Total # iterations * size of struct = total bytes of memory we need to allocate
     if(!results){
@@ -45,8 +50,30 @@ int main(){
             result.sigma = sigma;
             result.kernel_size = kernel_size;
 
-            image_decode("test_1.png", kernel_size, sigma, filter_choice, &result); // Decode and initialize benchmark, update result
-            results[result_idx++] = result; // fill array with updated results
+            unsigned char* image = image_decode("test_1.png", &result.width, &result.height); // Decode png image to 1D RGB on heap
+            if (!image) {
+                fprintf(stderr, "Failed to decode image.\n");
+                free(results);
+                return 1;
+            }
+
+            // Measure filter time
+            measure_filter_time(image, result.width, result.height, kernel_size, sigma, filter_choice, &result);
+
+            // Encode the image to a memory buffer
+            size_t encoded_size;
+            unsigned char* encoded_image = image_encode(image, result.width, result.height, &encoded_size);
+            if (encoded_image) {
+                // Save the encoded image from the buffer
+                save_image("test_1.png", encoded_image, result.width, result.height, filter_choice, kernel_size);
+                free(encoded_image);
+            }
+
+            // Free the image after encoding
+            free(image);
+
+            // Store the result
+            results[result_idx++] = result;
 
             }
         }

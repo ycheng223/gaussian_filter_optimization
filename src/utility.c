@@ -1,6 +1,11 @@
-#include "gaussian_filter.h"
-#include "utility.h"
+#include <stdio.h>
+#include <time.h>
+#include <string.h>
+#include <sys/stat.h>
 
+#include "../inc/utility.h"
+#include "../inc/gaussian_filter.h"
+#include "../inc/lodepng/lodepng.h"
 
 // Takes in data from Benchmark results and uses to compute summary statistics for each approach
 void print_statistics(BenchmarkResult* results, int count) {
@@ -115,4 +120,38 @@ void countdown(int seconds){
         remaining_time--; // repeat until remaining time goes down to 0
     }
     printf("\n----------Starting Test----------\n");
+}
+
+// Saves an image to a file.
+int save_image(const char* filename, const unsigned char* image_data, 
+               int width, int height, int filter_choice, int kernel_size) {
+    // Output filter names
+    const char* filter_names[] = {"base", "separable", "sse_base", "sse_shuffle"};
+
+    // Ensure output directory exists
+    struct stat st = {0};
+    if (stat("output", &st) == -1) {
+        mkdir("output", 0700);
+    }
+
+    // Truncate the extension (i.e. ".png")
+    const char *dot = strrchr(filename, '.');
+    size_t basename_len = dot ? (size_t)(dot - filename) : strlen(filename);
+
+    // Compose output filename: output/<filename>_k<kernel_size>_<filter>.png
+    char output_filename[2048];
+    snprintf(output_filename, sizeof(output_filename),
+            "output/%.*s_k%d_%s.png",
+            (int)basename_len, filename, kernel_size, filter_names[filter_choice - 1]);
+
+    // Save the image (standard lodepng method)
+    printf("Attempting to save to: %s\n", output_filename);
+    unsigned error = lodepng_encode32_file(output_filename, image_data, width, height);
+    if(error) {
+        fprintf(stderr, "Error %u: %s\n", error, lodepng_error_text(error));
+        return -1;
+    }
+
+    printf("Saved processed image as: %s\n", output_filename);
+    return 0;
 }

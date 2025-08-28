@@ -2,9 +2,6 @@
 #define GAUSSIAN_FILTER_H
 
 #include "common.h"
-#include "image_operations.h"
-#include "utility.h"
-#include "gaussian_processing.h"
 
 // Filter implementations
 void gaussian_filter_base(unsigned char* image, int width, int height, float sigma, int kernel_size);

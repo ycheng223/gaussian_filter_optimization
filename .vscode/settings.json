@@ -4,6 +4,10 @@
         "gaussian_filter.h": "c",
         "lodepng.h": "c",
         "common.h": "c",
-        "emmintrin.h": "c"
+        "emmintrin.h": "c",
+        "utility.h": "c",
+        "stdio.h": "c",
+        "png_transform.h": "c",
+        "image_operations.h": "c"
     }
 }
