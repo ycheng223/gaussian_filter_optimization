@@ -61,13 +61,7 @@ int main(){
             measure_filter_time(image, result.width, result.height, kernel_size, sigma, filter_choice, &result);
 
             // Encode the image to a memory buffer
-            size_t encoded_size;
-            unsigned char* encoded_image = image_encode(image, result.width, result.height, &encoded_size);
-            if (encoded_image) {
-                // Save the encoded image from the buffer
-                save_image("test_1.png", encoded_image, result.width, result.height, filter_choice, kernel_size);
-                free(encoded_image);
-            }
+            save_image("test_1.png", image, result.width, result.height, filter_choice, kernel_size);
 
             // Free the image after encoding
             free(image);

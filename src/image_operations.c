@@ -41,7 +41,7 @@ PaddedImage* image_padding_transform(unsigned char* image, int width, int height
 
     // Copy the original image into the padded image row by row directly from memory, offsetting for padding
     for(int y = 0; y < height; y++) { // For each row in the image...
-        int src_row_start_position = PADDED_ROW_SIZE(y * width); // Get the position of the start of the row in the original image (in memory i.e. 1D row-major array)
+        int src_row_start_position = y * width * CHANNELS_PER_PIXEL; // Get the position of the start of the row in the original image (in memory i.e. 1D row-major array)
         int dest_row_start_position = ROW_MAJOR_OFFSET(range, y + range, padded_width); // offset for padded rows on top of image and left
         memcpy(padded_img + dest_row_start_position, 
                 image + src_row_start_position, 
@@ -128,8 +128,76 @@ unsigned char* transpose_rgb_base(unsigned char* input, int width, int height) {
     return transposed;
 }
 
-// SSE version of the above, transposes in 4x4 blocks
-// currently doesn't work as sse block reads past the buffer on the edges of the image
+// Helper function to load 4x4 block of RGBA into 4 SSE registers
+static inline void load_block(const unsigned char* in_ptr, int width,
+                                       __m128i* out_r0, __m128i* out_r1, __m128i* out_r2, __m128i* out_r3) {
+    *out_r0 = _mm_loadu_si128((const __m128i*)&in_ptr[0]);
+    *out_r1 = _mm_loadu_si128((const __m128i*)&in_ptr[width * 4]);
+    *out_r2 = _mm_loadu_si128((const __m128i*)&in_ptr[width * 8]);
+    *out_r3 = _mm_loadu_si128((const __m128i*)&in_ptr[width * 12]);
+}
+
+
+static inline void transpose_block(
+    __m128i row0, __m128i row1, __m128i row2, __m128i row3,
+    __m128i* out0, __m128i* out1, __m128i* out2, __m128i* out3) {
+
+    // This is a new way to perform the transpose directly on the SSE registers.
+    // Given 4 128-bit registers, each of which holds 4 32-bit pixels (RGBA) ordered from high bit to low bit...
+    //      row0: | Pixel 4  | Pixel 3  | Pixel 2  | Pixel 1  | -> | [R4 G4 B4 A4] | [R3 G3 B3 A3] | [R2 G2 B2 A2] | [R1 G1 B1 A1] |
+    //      row1: | Pixel 8  | Pixel 7  | Pixel 6  | Pixel 5  | -> | [R8 G8 B8 A8] | [R7 G7 B7 A7] | [R6 G6 B6 A6] | [R5 G5 B5 A5] |
+    //      row2: | Pixel 12 | Pixel 11 | Pixel 10 | Pixel 9  | -> | [R12 G12 B12 A12] | [R11 G11 B11 A11] | [R10 G10 B10 A10] | [R9 G9 B9 A9] |
+    //      row3: | Pixel 16 | Pixel 15 | Pixel 14 | Pixel 13 | -> | [R16 G16 B16 A16] | [R15 G15 B15 A15] | [R14 G14 B14 A14] | [R13 G13 B13 A13] |
+
+    // Interleave 32-bit pixels from low and high halves (64 bits) of the registers
+
+    // Interleave 32-bit elements from the low 64 bits of the first two rows.
+    __m128i tmp0 = _mm_unpacklo_epi32(row0, row1);  // | Pixel 6  | Pixel 2  | Pixel 5  | Pixel 1  | -> | [R6 G6 B6 A6] | [R2 G2 B2 A2] | [R5 G5 B5 A5] | [R1 G1 B1 A1] |
+    // Do the same for the last two rows.
+    __m128i tmp1 = _mm_unpacklo_epi32(row2, row3);  // | Pixel 14 | Pixel 10 | Pixel 13 | Pixel 9  | -> | [R14 G14 B14 A14] | [R10 G10 B10 A10] | [R13 G13 B13 A13] | [R9 G9 B9 A9] |
+
+    // Interleave 32-bit elements from the high 64 bits of the first two rows.
+    __m128i tmp2 = _mm_unpackhi_epi32(row0, row1);  // | Pixel 8  | Pixel 4  | Pixel 7  | Pixel 3  | -> | [R8 G8 B8 A8] | [R4 G4 B4 A4] | [R7 G7 B7 A7] | [R3 G3 B3 B3] |
+    // Do the same for the last two rows.
+    __m128i tmp3 = _mm_unpackhi_epi32(row2, row3);  // | Pixel 16 | Pixel 12 | Pixel 15 | Pixel 11 | -> | [R16 G16 B16 A16] | [R12 G12 B12 A12] | [R15 G15 B15 A15] | [R11 G11 B11 A11] |
+
+    // Summary:128i* out0, __m128i* out1, __m128i* out2, __m128i* out3) {
+
+    // register_tmp0: | Pixel 6  | Pixel 2  | Pixel 5  | Pixel 1  | -> | [R6  G6  B6  A6]  | [R2  G2  B2  A2]  | [R5  G5  B5  A5]  | [R1  G1  B1  A1]  |
+    // register_tmp1: | Pixel 14 | Pixel 10 | Pixel 13 | Pixel 9  | -> | [R14 G14 B14 A14] | [R10 G10 B10 A10] | [R13 G13 B13 A13] | [R9  G9  B9  A9]  |
+    // register_tmp2: | Pixel 8  | Pixel 4  | Pixel 7  | Pixel 3  | -> | [R8  G8  B8  A8]  | [R4  G4  B4  A4]  | [R7  G7  B7  A7]  | [R3  G3  B3  B3]  |
+    // register_tmp3: | Pixel 16 | Pixel 12 | Pixel 15 | Pixel 11 | -> | [R16 G16 B16 A16] | [R12 G12 B12 A12] | [R15 G15 B15 A15] | [R11 G11 B11 A11] |
+
+
+    // Interleave the low 64-bit chunks of the temporary registers together.
+    *out0 = _mm_unpacklo_epi64(tmp0, tmp1); // | Pixel 13 | Pixel 9  | Pixel 5  | Pixel 1  | -> | [R13 G13 B13 A13] | [R9  G9  B9  A9]  | [R5 G5 B5 A5] | [R1 G1 B1 A1] |
+    // Interleave the high 64-bit chunks.
+    *out1 = _mm_unpackhi_epi64(tmp0, tmp1); // | Pixel 14 | Pixel 10 | Pixel 6  | Pixel 2  | -> | [R14 G14 B14 A14] | [R10 G10 B10 A10] | [R6 G6 B6 A6] | [R2 G2 B2 A2] |
+
+    // Repeat for the remaining temporary registers.
+    *out2 = _mm_unpacklo_epi64(tmp2, tmp3); // | Pixel 15 | Pixel 11 | Pixel 7  | Pixel 3  | -> | [R15 G15 B15 A15] | [R11 G11 B11 A11] | [R7 G7 B7 A7] | [R3 G3 B3 A3] |
+    *out3 = _mm_unpackhi_epi64(tmp2, tmp3); // | Pixel 16 | Pixel 12 | Pixel 8  | Pixel 4  | -> | [R16 G16 B16 A16] | [R12 G12 B12 A12] | [R8 G8 B8 A8] | [R4 G4 B4 A4] |
+    
+    // Final result is transposed 4x4 block of Pixels/RGBA (wow!):
+    // register_out0: | Pixel 13 | Pixel 9  | Pixel 5  | Pixel 1  | -> | [R13 G13 B13 A13] | [R9  G9  B9  A9]  | [R5 G5 B5 A5] | [R1 G1 B1 A1] |
+    // register_out1: | Pixel 14 | Pixel 10 | Pixel 6  | Pixel 2  | -> | [R14 G14 B14 A14] | [R10 G10 B10 A10] | [R6 G6 B6 A6] | [R2 G2 B2 A2] |
+    // register_out2: | Pixel 15 | Pixel 11 | Pixel 7  | Pixel 3  | -> | [R15 G15 B15 A15] | [R11 G11 B11 A11] | [R7 G7 B7 A7] | [R3 G3 B3 A3] |
+    // register_out3: | Pixel 16 | Pixel 12 | Pixel 8  | Pixel 4  | -> | [R16 G16 B16 A16] | [R12 G12 B12 A12] | [R8 G8 B8 A8] | [R4 G4 B4 A4] |
+
+}
+
+static inline void deinterleave_block(unsigned char* out_ptr, int width, int height, int x, int y,
+                                                 __m128i r_plane, __m128i g_plane, __m128i b_plane, __m128i a_plane) {
+    size_t plane_size = (size_t)width * (size_t)height;
+    size_t offset = (size_t)y * width + x;
+
+    _mm_storeu_si128((__m128i*)(out_ptr + 0 * plane_size + offset), r_plane); // Store Red plane: register_r_plane: | [R1 R2 R3 R4] | [R5 R6 R7 R8] | [R9 R10 R11 R12] | [R13 R14 R15 R16]
+    _mm_storeu_si128((__m128i*)(out_ptr + 1 * plane_size + offset), g_plane); // Store Green plane
+    _mm_storeu_si128((__m128i*)(out_ptr + 2 * plane_size + offset), b_plane); // Store Blue plane
+    _mm_storeu_si128((__m128i*)(out_ptr + 3 * plane_size + offset), a_plane); // Store Alpha plane
+}
+
+// SSE version of image transpose, transposes image in 4x4 blocks and stores seperate blocks back in memory
 unsigned char* transpose_rgb_block_sse(unsigned char* input, int width, int height) {
 
     // Allocate memory for transposed data
@@ -139,76 +207,69 @@ unsigned char* transpose_rgb_block_sse(unsigned char* input, int width, int heig
         return NULL;
     }
 
-    // Transpose the data in 4x4 blocks using SSE
-        for (int y = 0; y < height; y += 4) {
-            for (int x = 0; x < width; x += 4) {
-                __m128i row0, row1, row2, row3;
-                
-                // Calculate input/output positions
-                unsigned char* in_ptr = input + (y * width + x) * CHANNELS_PER_PIXEL; // offset memory start position from initial input image pointer
-                unsigned char* out_ptr = transposed + (x * height + y) * CHANNELS_PER_PIXEL; // transposed offset memory start position (i.e. y becomes x and vice versa)
-                
-                // Load 4 rows of RGB data into 4 SSE registeres at in one go
-                row0 = _mm_loadu_si128((__m128i*)&in_ptr[0]); // load first 16 bytes of data from memory position specified by in_ptr
-                row1 = _mm_loadu_si128((__m128i*)&in_ptr[width * 3]); // second 16 bytes...
-                row2 = _mm_loadu_si128((__m128i*)&in_ptr[width * 6]); // and so on...
-                row3 = _mm_loadu_si128((__m128i*)&in_ptr[width * 9]);
+    // Process the image in 4x4 pixel blocks
+    for (int y = 0; y < height; y += 4) {
+        for (int x = 0; x < width; x += 4) {
+            __m128i r0, r1, r2, r3; // Registers for input rows
+            __m128i o0, o1, o2, o3; // Registers for de-interleaved output channels
+            
+            unsigned char* in_ptr = input + (y * width + x) * CHANNELS_PER_PIXEL;
+            
+            // Load 4x4 block of RGBA (16 pixels i.e. 16*32 bits = 512 bits) into 4 SSE registers (4*128 = 512 bits)
+            load_block(in_ptr, width, &r0, &r1, &r2, &r3);
 
-                // Process all 4 rows
-                for (int i = 0; i < 4; i++) {
-                    __m128i current_row;
-                    switch(i) {
-                        case 0: current_row = row0; break;
-                        case 1: current_row = row1; break;
-                        case 2: current_row = row2; break;
-                        case 3: current_row = row3; break;
-                    }
-
-                    // Initialize 3 SSE registers to store shuffle masks for RGB separation
-                    __m128i mask_red = _mm_set_epi8(0x80,0x80,0x80,0x80, 12,9,6,3,0, 0x80,0x80,0x80,0x80,0x80,0x80,0x80); // Result: [0 0 0 0 R4 R3 R2 R1 R0 0 0 0 0 0 0 0]
-                    __m128i mask_green = _mm_set_epi8(0x80,0x80,0x80,0x80, 13,10,7,4,1, 0x80,0x80,0x80,0x80,0x80,0x80,0x80); // Same as above we are only adding greens (offset 1)
-                    __m128i mask_blue = _mm_set_epi8(0x80,0x80,0x80,0x80, 14,11,8,5,2, 0x80,0x80,0x80,0x80,0x80,0x80,0x80); // Same as above except for blues (offset 2)
-
-                    // Initialize 3 more SSE registers to apply the shuffle on the current row to seperate RGB and store
-                    __m128i red_vals = _mm_shuffle_epi8(current_row, mask_red);
-                    __m128i green_vals = _mm_shuffle_epi8(current_row, mask_green);
-                    __m128i blue_vals = _mm_shuffle_epi8(current_row, mask_blue);
-
-                    // Store transposed data, offsetting for each row, by stacking the registers on 
-                    // top of each other, we create the transposed columns.
-                    unsigned char* block_ptr = out_ptr + i * CHANNELS_PER_PIXEL * height;
-                    _mm_storeu_si128((__m128i*)block_ptr, red_vals); // store R values
-                    _mm_storeu_si128((__m128i*)(block_ptr + height * CHANNELS_PER_PIXEL), green_vals);
-                    _mm_storeu_si128((__m128i*)(block_ptr + 2 * height * CHANNELS_PER_PIXEL), blue_vals);
-                }
-            }
+            // Transpose 4x4 block using register interleave operations
+            transpose_block(r0, r1, r2, r3, &o0, &o1, &o2, &o3);
+            
+            // Deinterleave RGBA and store each channel in seperate registers (total of 4)
+            deinterleave_block(transposed, width, height, x, y, o0, o1, o2, o3);
         }
+    }
 
-        return transposed;
+    return transposed;
 }
 
 
-// Convert float values from SSE processing back into integer, pack down to 8 bits to obtain RGB values (i.e. 0-255)
-// Re-interleave the RGBA so we can rebuild the image
-void store_rgb_results(unsigned char* output, __m128 red, __m128 green, __m128 blue, const unsigned char* input) {
-    // Convert float values back to integers
-    __m128i red_int = _mm_cvtps_epi32(red);
-    __m128i green_int = _mm_cvtps_epi32(green);
-    __m128i blue_int = _mm_cvtps_epi32(blue);
+// Helper function to convert float values from SSE processing back into 32 bit integer
+static inline void convert_float_int32(__m128 r_float, __m128 g_float, __m128 b_float,
+                                               __m128i* r_int, __m128i* g_int, __m128i* b_int) {
+    *r_int = _mm_cvtps_epi32(r_float);
+    *g_int = _mm_cvtps_epi32(g_float);
+    *b_int = _mm_cvtps_epi32(b_float);
+}
 
-    // Pack 32-bit integers into 16-bit integers with saturation
-    __m128i rg_packed = _mm_packs_epi32(red_int, green_int);
-    __m128i bb_packed = _mm_packs_epi32(blue_int, blue_int);
+// Helper function to pack 32 bit integer down to 8 bit with stuation
+static inline __m128i pack_int8(__m128i r_int, __m128i g_int, __m128i b_int) {
+    //First pack 32 bit down to 16 bit with saturation
+    __m128i rg_packed16 = _mm_packs_epi32(r_int, g_int);
+    __m128i b_packed16 = _mm_packs_epi32(b_int, b_int); // Use blue for both halves as a placeholder
 
-    // Pack 16-bit integers into 8-bit unsigned integers with saturation
-    __m128i rgb_packed = _mm_packus_epi16(rg_packed, bb_packed);
+    // Pack 16-bit signed integers into 8-bit unsigned integers with saturation
+    return _mm_packus_epi16(rg_packed16, b_packed16);
+}
 
-    // Extract the individual bytes and interleave RGBA values
-    unsigned char* rgb_ptr = (unsigned char*)&rgb_packed;
+// Re-interleave RGB values using 4 channels/pixel offset in output image memory block
+static inline void reinterleave_block(unsigned char* output, __m128i packed_rgb, const unsigned char* input) {
+    unsigned char* rgb_ptr = (unsigned char*)&packed_rgb;
+
     for (int i = 0; i < 4; i++) {
-        output[i * 4 + 0] = rgb_ptr[i];         // R
-        output[i * 4 + 1] = rgb_ptr[i + 4];     // G
-        output[i * 4 + 2] = rgb_ptr[i + 8];     // B
-        output[i * 4 + 3] = input[i * 4 + 3];   // A (copied directly from input)
+        output[i * 4 + 0] = rgb_ptr[i];         // R channel
+        output[i * 4 + 1] = rgb_ptr[i + 4];     // G channel
+        output[i * 4 + 2] = rgb_ptr[i + 8];     // B channel
+        output[i * 4 + 3] = input[i * 4 + 3];   // A channel (copied from original input)
     }
+}
+
+
+void store_rgba_results(unsigned char* output, __m128 red, __m128 green, __m128 blue, const unsigned char* input) {
+    __m128i r_int, g_int, b_int;
+
+    // Convert from float to int32
+    convert_float_int32(red, green, blue, &r_int, &g_int, &b_int);
+
+    // Pack down to int8
+    __m128i packed_rgb = pack_int8(r_int, g_int, b_int);
+
+    // Re-interleave back to RGB
+    reinterleave_block(output, packed_rgb, input);
 }

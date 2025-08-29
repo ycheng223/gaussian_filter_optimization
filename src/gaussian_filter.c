@@ -4,6 +4,7 @@
 #include "../inc/utility.h"
 #include <string.h>
 
+
 void gaussian_filter_base(unsigned char* image, int width, int height, float sigma, int kernel_size){
 
     // We are replacing each individual pixel in the image with the weighted average of it and its neighboring pixels in a nxn matrix (gaussian kernel) where n = kernel_size
@@ -102,10 +103,10 @@ void gaussian_filter_sse_base(unsigned char* image, int width, int height, float
             __m128 sum_green = _mm_setzero_ps();
             __m128 sum_blue = _mm_setzero_ps();
 
-            process_sse_base(padded_image, kernel, x, y, padded_width, padded_height, range,
+            process_sse_base(padded_image, kernel, x, y, padded_width, range,
                            &sum_red, &sum_green, &sum_blue, 0);
 
-            store_rgb_results(
+            store_rgba_results(
                 temp + ROW_MAJOR_OFFSET(x, y, padded_width),
                 sum_red, sum_green, sum_blue,
                 padded_image + ROW_MAJOR_OFFSET(x, y, padded_width)
@@ -123,21 +124,24 @@ void gaussian_filter_sse_base(unsigned char* image, int width, int height, float
             __m128 sum_green = _mm_setzero_ps();
             __m128 sum_blue = _mm_setzero_ps();
 
-            process_sse_base(temp, kernel, x, y, padded_width, padded_height, range,
+            process_sse_base(temp, kernel, x, y, padded_width, range,
                            &sum_red, &sum_green, &sum_blue, 1);
 
-            store_rgb_results(
+            // The vertical pass reads from temp, and writes its final blurred RGB
+            // back into temp. The alpha is sourced from the original padded image.
+            store_rgba_results(
                 temp + ROW_MAJOR_OFFSET(x, y, padded_width),
                 sum_red, sum_green, sum_blue,
-                temp + ROW_MAJOR_OFFSET(x, y, padded_width)
+                padded_image + ROW_MAJOR_OFFSET(x, y, padded_width)
             );
         }
     }
 
-    // After vertical pass, offset for padding and copy only the valid region back to the original image
-    for(int y = range; y < height + range; y++) {
-        memcpy(image + PADDED_ROW_SIZE((y - range) * width),
-               temp + ROW_MAJOR_OFFSET(range, y, padded_width),
+    // After vertical pass, copy only the valid, unpadded region from the final
+    // processed buffer (temp) back to the original image buffer.
+    for(int y = 0; y < height; y++) {
+        memcpy(image + PADDED_ROW_SIZE(y * width),
+               temp + ROW_MAJOR_OFFSET(range, y + range, padded_width),
                PADDED_ROW_SIZE(width));
     }
 
@@ -161,7 +165,7 @@ void gaussian_filter_sse_shuffle(unsigned char* image, int width, int height, fl
         return;
     }
 
-    // Pad the image to make it a multiple of 4 and ensure that the kernel does not exceed the boundaries
+    // Pad the image to make it a multiple of 16 and ensure that the kernel does not exceed the boundaries
     PaddedImage* padded = image_padding_transform(image, width, height, range);
     if (!padded) {
         free(kernel);
@@ -174,12 +178,13 @@ void gaussian_filter_sse_shuffle(unsigned char* image, int width, int height, fl
     int padded_height = padded->padded_height;
 
     // Masks for shuffling the RGB values to deinterleave
-    const __m128i mask_red = _mm_set_epi8(0x80,0x80,0x80,0x80,0x80,0x80,0x80,0x80,0x80,0x80, 12, 9, 6, 3, 0, 0x80);
-    const __m128i mask_green = _mm_set_epi8(0x80,0x80,0x80,0x80,0x80,0x80,0x80,0x80,0x80,0x80, 13, 10, 7, 4, 1, 0x80);
-    const __m128i mask_blue = _mm_set_epi8(0x80,0x80,0x80,0x80,0x80,0x80,0x80,0x80,0x80,0x80, 14, 11, 8, 5, 2, 0x80);
+    const __m128i mask_red   = _mm_set_epi8(0x80, 0x80, 0x80, 12, 0x80, 0x80, 0x80, 8, 0x80, 0x80, 0x80, 4, 0x80, 0x80, 0x80, 0);
+    const __m128i mask_green = _mm_set_epi8(0x80, 0x80, 0x80, 13, 0x80, 0x80, 0x80, 9, 0x80, 0x80, 0x80, 5, 0x80, 0x80, 0x80, 1);
+    const __m128i mask_blue  = _mm_set_epi8(0x80, 0x80, 0x80, 14, 0x80, 0x80, 0x80, 10, 0x80, 0x80, 0x80, 6, 0x80, 0x80, 0x80, 2);
+
 
     // Next we prepare a temp buffer for the horizontal pass (i.e. convolve the rows with the normalized 1D gaussian kernel calculated above)
-    unsigned char* temp = (unsigned char*)malloc(PADDED_IMG_SIZE(padded_width, padded_height)); //total dimension will be width * height * 3 channels (i.e. RGB)
+        unsigned char* temp = (unsigned char*)malloc(PADDED_IMG_SIZE(padded_width, padded_height));
     if (!temp) {
         fprintf(stderr, "Failed to allocate temp buffer\n");
         free(padded->data);
@@ -188,28 +193,22 @@ void gaussian_filter_sse_shuffle(unsigned char* image, int width, int height, fl
         return;
     }
     
-    // Now onto the SSE horizontal pass...
+    // Shuffled SSE Horizontal pass
     for(int y = 0; y < padded_height; y++) {
-        for(int x = 0; x < padded_width; x += 4) { // Process 4 pixels in parallel using SSE
+        for(int x = 0; x < padded_width; x += 4) { // Four pixels at a time... (i.e. 4 * 32 bit single-precision/cycle)
             __m128 sum_red = _mm_setzero_ps();
             __m128 sum_green = _mm_setzero_ps();
             __m128 sum_blue = _mm_setzero_ps();
-
-            process_sse_shuffle(padded_image, kernel, mask_red, mask_green, mask_blue,
-                            x, range, padded_width, &sum_red, &sum_green, &sum_blue);
-
-            unsigned char* temp_loc = temp + ROW_MAJOR_OFFSET(x, y, padded_width);
-            store_rgb_results(
-                temp_loc, sum_red, sum_green, sum_blue,
-                padded_image + ROW_MAJOR_OFFSET(x, y, padded_width)
-            );
+            process_sse_shuffle(padded_image, kernel, mask_red, mask_green, mask_blue, x, y, range, padded_width, &sum_red, &sum_green, &sum_blue);
+            store_rgba_results(temp + ROW_MAJOR_OFFSET(x, y, padded_width), sum_red, sum_green, sum_blue, padded_image + ROW_MAJOR_OFFSET(x, y, padded_width));
         }
     }
 
-    // Now for the SSE Vertical Pass, because the image data is in row-major format, we will have to jump
+    // Shuffled SSE Vertical pass
+    // Because the image data is in row-major format, we will have to jump
     // between pixels to get to the next column meaning non-contiguous memory access. Therefore we will
     // TRANSPOSE a copy of the data (so that it becomes COLUMN-MAJOR) and store it seperately in memory.
-    unsigned char* transposed_img = transpose_rgb_base(temp, padded_width, padded_height);
+    unsigned char* transposed_img = transpose_rgb_block_sse(temp, padded_width, padded_height);
     if (!transposed_img) {
         fprintf(stderr, "Failed to transpose image\n");
         free(temp);
@@ -219,9 +218,9 @@ void gaussian_filter_sse_shuffle(unsigned char* image, int width, int height, fl
         return;
     }
 
-    // Create final buffer for storing results
-    unsigned char* final = (unsigned char*)malloc(PADDED_IMG_SIZE(padded_width, padded_height));
-    if (!final) {
+    // Also allocate memory block on heap for the final output image which will use another transpose to bring it back to row-major
+    unsigned char* final_transposed = (unsigned char*)malloc(PADDED_IMG_SIZE(padded_width, padded_height));
+    if (!final_transposed) {
         fprintf(stderr, "Failed to allocate final buffer\n");
         free(transposed_img);
         free(temp);
@@ -231,37 +230,27 @@ void gaussian_filter_sse_shuffle(unsigned char* image, int width, int height, fl
         return;
     }
 
-    // Vertical Pass using SSE, since it is transposed, RGB is already seperated so we can process it using SSE directly
-    for (int y = 0; y < padded_width; y++) {
+    // Now apply the vertical pass to the transposed image
+    for (int y = 0; y < padded_width; y += 4) {
         for (int x = 0; x < padded_height; x += 4) {
             __m128 sum_red = _mm_setzero_ps();
             __m128 sum_green = _mm_setzero_ps();
             __m128 sum_blue = _mm_setzero_ps();
+            process_sse_shuffle_vertical(transposed_img, kernel, x, y, range, padded_height, padded_width, &sum_red, &sum_green, &sum_blue);
 
-            process_sse_shuffle_vertical(transposed_img, kernel, x, y, range, 
-                                      padded_height, padded_width, 
-                                      &sum_red, &sum_green, &sum_blue);
-            
-            // Store in final buffer instead of original image
-            store_rgb_results(
-                final + ROW_MAJOR_OFFSET(x, y, padded_height),
-                sum_red, sum_green, sum_blue,
-                transposed_img + ROW_MAJOR_OFFSET(x, y, padded_height)
-            );
+            // Save result (both passes complete) to final output image
+            store_rgba_results(final_transposed + COL_MAJOR_OFFSET(x, y, padded_height), sum_red, sum_green, sum_blue, transposed_img + COL_MAJOR_OFFSET(x, y, padded_height));
         }
     }
 
-    // After vertical pass, copy only the valid region back to the original image
+    unsigned char* final_row_major = transpose_rgb_block_sse(final_transposed, padded_height, padded_width); // Transpose again to return to row-major for output image
+    
     for (int y = 0; y < height; y++) {
-        for (int x = 0; x < width; x++) {
-            int source_idx = COL_MAJOR_OFFSET((x + range), (y + range), padded_height);
-            int destination_idx = ROW_MAJOR_OFFSET(x, y, width);
-            memcpy(image + destination_idx, final + source_idx, CHANNELS_PER_PIXEL);
-        }
+        memcpy(image + (size_t)y * width * CHANNELS_PER_PIXEL, final_row_major + ROW_MAJOR_OFFSET(range, y + range, padded_width), (size_t)width * CHANNELS_PER_PIXEL);
     }
 
-    // clean up memory
-    free(final);
+    free(final_row_major);
+    free(final_transposed);
     free(transposed_img);
     free(temp);
     free(kernel);

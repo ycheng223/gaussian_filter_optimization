@@ -105,12 +105,11 @@ void process_separable_kernel (unsigned char* input, unsigned char* output,
 
 
 void process_sse_base(unsigned char* input, float* kernel,
-                           int x, int y, int width, int height, int range,
+                           int x, int y, int width, int range,
                            __m128* sum_red, __m128* sum_green, __m128* sum_blue,
                            int is_vertical) {
     
     for (int kernel_index = -range; kernel_index <= range; kernel_index++) {
-        // Calculate neighbor position based on pass direction
         int neighbor_x, neighbor_y;
         if (is_vertical) { 
             neighbor_x = x; 
@@ -121,10 +120,11 @@ void process_sse_base(unsigned char* input, float* kernel,
             neighbor_y = y; 
         }
         
-        int clamped_index = border_clamp(width, height, neighbor_x, neighbor_y);
+        // Calculate the data offset based on x, y, and kernel_index
+        int data_offset = ROW_MAJOR_OFFSET(neighbor_x, neighbor_y, width);
         
         // Load RGB data
-        __m128i input_data = _mm_loadu_si128((__m128i*)&input[clamped_index * CHANNELS_PER_PIXEL]);
+        __m128i input_data = _mm_loadu_si128((__m128i*)&input[data_offset]);
         
         // Convert to floats
         __m128 red_ps = _mm_cvtepi32_ps(_mm_cvtepu8_epi32(input_data));
@@ -155,14 +155,14 @@ void process_sse_base(unsigned char* input, float* kernel,
 
 void process_sse_shuffle (unsigned char* padded_image, 
                                     float* kernel, const __m128i mask_red, 
-                                    const __m128i mask_green, const __m128i mask_blue, int x, int range, 
+                                    const __m128i mask_green, const __m128i mask_blue, int x, int y, int range, 
                                     int padded_width, __m128* sum_red, __m128* sum_green, __m128* sum_blue) {
     
     assert((x + 3) < padded_width); // Check to see nothing goes out of bounds
                                         
     for (int k = -range; k <= range; k++) { 
         
-        int row = range;  // Current row in padded coordinates
+        int row = y;  // Current row in padded coordinates
         int col = x + range + k;  // Current column in padded coordinates
         int data_offset = ROW_MAJOR_OFFSET(col, row, padded_width);
 
