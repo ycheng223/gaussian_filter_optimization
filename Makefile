@@ -9,6 +9,7 @@ SRC = src/main.c \
       src/utility.c \
       src/image_operations.c \
       src/png_transform.c \
+      src/debug.c \
       inc/lodepng/lodepng.c
 
 CC = gcc
