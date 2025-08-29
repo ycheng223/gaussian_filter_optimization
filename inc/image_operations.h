@@ -14,6 +14,10 @@ int border_clamp(int width, int height, int x, int y);
 // Transpose, Deinterleave, and RGB operations
 unsigned char* transpose_rgb_base(unsigned char* input, int width, int height);
 unsigned char* transpose_rgb_block_sse(unsigned char* input, int width, int height);
+unsigned char* retranspose_rgb_block_sse(unsigned char* input, int width, int height);
+
+unsigned char* deinterleave_rgb_block_sse(unsigned char* transposed_blocks, int width, int height);
+unsigned char* reinterleave_rgb_block_sse(unsigned char* input, int width, int height);
 
 // Store to output memory block
 void store_rgba_results(unsigned char* output, __m128 red, __m128 green, __m128 blue, const unsigned char* input);
