@@ -13,6 +13,10 @@
 
 
 
+//------------------------------------------------------------------------------------------------------------------
+// Border Operations
+//------------------------------------------------------------------------------------------------------------------
+
 // Add padding to the image fo account for boundary overlap by the sliding kernel and ensure the image is divisble by four
 // Padded values are the clamped values at the closest border
 PaddedImage* image_padding_transform(unsigned char* image, int width, int height, int range) {
@@ -110,6 +114,10 @@ int border_clamp(int width, int height, int x, int y) {
 }
 
 
+//------------------------------------------------------------------------------------------------------------------
+// Normal image transpose
+//------------------------------------------------------------------------------------------------------------------
+
 // transposes image and seperates it into seperate blocks of r, g, and b in memory
 unsigned char* transpose_rgb_base(unsigned char* input, int width, int height) {
     unsigned char* transposed = (unsigned char*)malloc(PADDED_IMG_SIZE(width, height));
@@ -127,6 +135,78 @@ unsigned char* transpose_rgb_base(unsigned char* input, int width, int height) {
     }
     return transposed;
 }
+
+//------------------------------------------------------------------------------------------------------------------
+// Normal image deinterleave
+//------------------------------------------------------------------------------------------------------------------
+
+// Deinterleaves an RGB image into separate R, G, and B planes.
+unsigned char* deinterleave_rgb_base(unsigned char* input, int width, int height) {
+    // Calculate the total number of pixels and the size of a single color plane.
+    size_t num_pixels = (size_t)width * height;
+    size_t plane_size = num_pixels;
+
+    // Allocate memory for the output buffer, which will store the deinterleaved color planes.
+    unsigned char* deinterleaved = (unsigned char*)malloc(PADDED_IMG_SIZE(width, height));
+    if (!deinterleaved) {
+        fprintf(stderr, "Failed to allocate deinterleave buffer\n");
+        return NULL;
+    }
+
+    // Deinterleave the image by separating the R, G, B, and A channels.
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            size_t index = (size_t)y * width + x;
+            size_t offset = index * CHANNELS_PER_PIXEL;
+            deinterleaved[index] = input[offset];                     // Red channel
+            deinterleaved[index + plane_size] = input[offset + 1];     // Green channel
+            deinterleaved[index + 2 * plane_size] = input[offset + 2]; // Blue channel
+            deinterleaved[index + 3 * plane_size] = input[offset + 3]; // Alpha channel
+        }
+    }
+
+    return deinterleaved;
+}
+
+//------------------------------------------------------------------------------------------------------------------
+// Normal image reinterleave
+//------------------------------------------------------------------------------------------------------------------
+
+// Reinterleaves separate R, G, B, and A planes back into a single RGBA image. Store in memory block.
+
+unsigned char* reinterleave_rgb_base(unsigned char* input, int width, int height) {
+    // Calculate the total number of pixels and the size of a single color plane.
+    size_t num_pixels = (size_t)width * height;
+    size_t plane_size = num_pixels;
+
+    // Allocate memory for the interleaved output buffer.
+    unsigned char* interleaved = (unsigned char*)malloc(PADDED_IMG_SIZE(width, height));
+    if (!interleaved) {
+        fprintf(stderr, "Failed to allocate reinterleave buffer\n");
+        return NULL;
+    }
+
+    // Pointers to the start of each color plane in the input buffer.
+    const unsigned char* r_plane = input;
+    const unsigned char* g_plane = input + plane_size;
+    const unsigned char* b_plane = input + 2 * plane_size;
+    const unsigned char* a_plane = input + 3 * plane_size;
+
+    // Reinterleave the color planes into the output buffer.
+    for (size_t i = 0; i < num_pixels; ++i) {
+        size_t offset = i * CHANNELS_PER_PIXEL;
+        interleaved[offset + 0] = r_plane[i]; // Red
+        interleaved[offset + 1] = g_plane[i]; // Green
+        interleaved[offset + 2] = b_plane[i]; // Blue
+        interleaved[offset + 3] = a_plane[i]; // Alpha
+    }
+
+    return interleaved;
+}
+
+//------------------------------------------------------------------------------------------------------------------
+// SSE image transpose
+//------------------------------------------------------------------------------------------------------------------
 
 // Helper function to load 4x4 block of RGBA into 4 SSE registers
 static inline void load_block(const unsigned char* in_ptr, int width,
@@ -229,6 +309,11 @@ unsigned char* transpose_rgb_block_sse(unsigned char* input, int width, int heig
     return transposed_block;
 }
 
+
+//------------------------------------------------------------------------------------------------------------------
+// SSE Retranspose function to convert transposed image block (4x4) held in SSE registers back to original using vector operations (i.e. non-symmetric)
+//------------------------------------------------------------------------------------------------------------------
+
 static inline void load_transposed_block(const unsigned char* in_ptr, __m128i* out_col0, __m128i* out_col1, __m128i* out_col2, __m128i* out_col3) {
     *out_col0 = _mm_loadu_si128((const __m128i*)(in_ptr));
     *out_col1 = _mm_loadu_si128((const __m128i*)(in_ptr + 16));
@@ -242,6 +327,7 @@ static inline void store_interleaved_block(unsigned char* out_ptr, int width, __
     _mm_storeu_si128((__m128i*)(out_ptr + (size_t)width * 8), r2);
     _mm_storeu_si128((__m128i*)(out_ptr + (size_t)width * 12), r3);
 }
+
 
 // Inverse of the above to recreate the image (for debug testing of transpose)
 unsigned char* retranspose_rgb_block_sse(unsigned char* input, int width, int height) {
@@ -267,32 +353,55 @@ unsigned char* retranspose_rgb_block_sse(unsigned char* input, int width, int he
     return retransposed;
 }
 
-// interleave the columns using high-low logic to seperate into RGBA,
+
+//--------------------------------------------------------------------------------------------
+// Deinterleave 4x4 block into RGBA channels and store each channel in seperate SSE registers
+//--------------------------------------------------------------------------------------------
+
+// Helper function to deinterleave the columns using high-low unpack logic to seperate into RGBA,
 static inline void deinterleave_block(__m128i col0, __m128i col1, __m128i col2, __m128i col3,
                                       __m128i* r_plane, __m128i* g_plane, __m128i* b_plane, __m128i* a_plane) {
-    __m128i tmp0, tmp1, tmp2, tmp3;
-    tmp0 = _mm_unpacklo_epi8(col0, col1);
-    tmp1 = _mm_unpacklo_epi8(col2, col3);
-    tmp2 = _mm_unpackhi_epi8(col0, col1);
-    tmp3 = _mm_unpackhi_epi8(col2, col3);
-
-    *r_plane = _mm_unpacklo_epi16(tmp0, tmp1);
-    *b_plane = _mm_unpackhi_epi16(tmp0, tmp1);
-    *g_plane = _mm_unpacklo_epi16(tmp2, tmp3);
-    *a_plane = _mm_unpackhi_epi16(tmp2, tmp3);
+    
+    // Interleave bytes from columns to group same channels together
+    __m128i rg_01 = _mm_unpacklo_epi8(col0, col1);  // R0G0R1G1 R4G4R5G5 R8G8R9G9 R12G12R13G13
+    __m128i ba_01 = _mm_unpackhi_epi8(col0, col1);  // B0A0B1A1 B4A4B5A5 B8A8B9A9 B12A12B13A13
+    __m128i rg_23 = _mm_unpacklo_epi8(col2, col3);  // R2G2R3G3 R6G6R7G7 R10G10R11G11 R14G14R15G15
+    __m128i ba_23 = _mm_unpackhi_epi8(col2, col3);  // B2A2B3A3 B6A6B7A7 B10A10B11A11 B14A14B15A15
+    
+    __m128i r_temp = _mm_unpacklo_epi8(rg_01, rg_23);  // R0R2R1R3 R4R6R5R7 R8R10R9R11 R12R14R13R15
+    __m128i g_temp = _mm_unpackhi_epi8(rg_01, rg_23);  // G0G2G1G3 G4G6G5G7 G8G10G9G11 G12G14G13G15
+    __m128i b_temp = _mm_unpacklo_epi8(ba_01, ba_23);  // B0B2B1B3 B4B6B5B7 B8B10B9B11 B12B14B13B15
+    __m128i a_temp = _mm_unpackhi_epi8(ba_01, ba_23);  // A0A2A1A3 A4A6A5A7 A8A10A9A11 A12A14A13A15
+    
+    // Final shuffle to get proper order
+    *r_plane = _mm_unpacklo_epi8(r_temp, _mm_unpackhi_epi8(r_temp, r_temp));
+    *g_plane = _mm_unpacklo_epi8(g_temp, _mm_unpackhi_epi8(g_temp, g_temp));
+    *b_plane = _mm_unpacklo_epi8(b_temp, _mm_unpackhi_epi8(b_temp, b_temp));
+    *a_plane = _mm_unpacklo_epi8(a_temp, _mm_unpackhi_epi8(a_temp, a_temp));
 }
 
+// Helper macro to store the lower 32 bits of a 128-bit register
+#define _mm_storeu_si32(p, a) _mm_store_ss((float*)(p), _mm_castsi128_ps(a))
 static inline void store_planar_block(unsigned char* out_ptr, int width, int height, int x, int y,
                                __m128i r_plane, __m128i g_plane, __m128i b_plane, __m128i a_plane) {
     size_t plane_size = (size_t)width * height;
-    
-    // CORRECTED: The byte offset is now a simple row-major offset within the plane.
-    size_t byte_offset = (size_t)y * width + x;
 
-    _mm_storeu_si128((__m128i*)(out_ptr + 0 * plane_size + byte_offset), r_plane);
-    _mm_storeu_si128((__m128i*)(out_ptr + 1 * plane_size + byte_offset), g_plane);
-    _mm_storeu_si128((__m128i*)(out_ptr + 2 * plane_size + byte_offset), b_plane);
-    _mm_storeu_si128((__m128i*)(out_ptr + 3 * plane_size + byte_offset), a_plane);
+    for (int i = 0; i < 4; ++i) {
+        // Calculate the offset for the current row in the 4x4 block
+        size_t byte_offset = (size_t)(y + i) * width + x;
+
+        // Store 4 bytes for each color plane
+        _mm_storeu_si32(out_ptr + 0 * plane_size + byte_offset, r_plane);
+        _mm_storeu_si32(out_ptr + 1 * plane_size + byte_offset, g_plane);
+        _mm_storeu_si32(out_ptr + 2 * plane_size + byte_offset, b_plane);
+        _mm_storeu_si32(out_ptr + 3 * plane_size + byte_offset, a_plane);
+
+        // Shift the next 4 bytes of the plane into the lower 32 bits of the register
+        r_plane = _mm_shuffle_epi32(r_plane, _MM_SHUFFLE(0, 3, 2, 1));
+        g_plane = _mm_shuffle_epi32(g_plane, _MM_SHUFFLE(0, 3, 2, 1));
+        b_plane = _mm_shuffle_epi32(b_plane, _MM_SHUFFLE(0, 3, 2, 1));
+        a_plane = _mm_shuffle_epi32(a_plane, _MM_SHUFFLE(0, 3, 2, 1));
+    }
 }
 
 unsigned char* deinterleave_rgb_block_sse(unsigned char* transposed_blocks, int width, int height) {
@@ -318,15 +427,35 @@ unsigned char* deinterleave_rgb_block_sse(unsigned char* transposed_blocks, int 
 }
 
 
+//---------------------------------------------------------------------------------
+// Reinterleave 4x4 blocks of channels back into unified image and store rebuilt image back in memory
+//---------------------------------------------------------------------------------
+
+#define _mm_loadu_si32(p) _mm_castps_si128(_mm_load_ss((const float*)(p))) // Helper macro to load 32 bits into a 128-bit register
+
+// Helper macro to load 32 bits into a 128-bit register
+#define _mm_loadu_si32(p) _mm_castps_si128(_mm_load_ss((const float*)(p)))
+
 static inline void load_planar_block(const unsigned char* in_ptr, int width, int height, int x, int y,
                                      __m128i* r_plane, __m128i* g_plane, __m128i* b_plane, __m128i* a_plane) {
     size_t plane_size = (size_t)width * height;
-    size_t byte_offset = (size_t)y * width + x;
 
-    *r_plane = _mm_loadu_si128((const __m128i*)(in_ptr + 0 * plane_size + byte_offset));
-    *g_plane = _mm_loadu_si128((const __m128i*)(in_ptr + 1 * plane_size + byte_offset));
-    *b_plane = _mm_loadu_si128((const __m128i*)(in_ptr + 2 * plane_size + byte_offset));
-    *a_plane = _mm_loadu_si128((const __m128i*)(in_ptr + 3 * plane_size + byte_offset));
+    // Read the 4 bytes for each of the 4 rows into temporary 32-bit integers
+    int r_rows[4], g_rows[4], b_rows[4], a_rows[4];
+
+    for (int i = 0; i < 4; ++i) {
+        size_t byte_offset = (size_t)(y + i) * width + x;
+        r_rows[i] = *(int*)(in_ptr + 0 * plane_size + byte_offset);
+        g_rows[i] = *(int*)(in_ptr + 1 * plane_size + byte_offset);
+        b_rows[i] = *(int*)(in_ptr + 2 * plane_size + byte_offset);
+        a_rows[i] = *(int*)(in_ptr + 3 * plane_size + byte_offset);
+    }
+
+    // Insert each 32-bit integer into the correct lane of the 128-bit register
+    *r_plane = _mm_set_epi32(r_rows[3], r_rows[2], r_rows[1], r_rows[0]);
+    *g_plane = _mm_set_epi32(g_rows[3], g_rows[2], g_rows[1], g_rows[0]);
+    *b_plane = _mm_set_epi32(b_rows[3], b_rows[2], b_rows[1], b_rows[0]);
+    *a_plane = _mm_set_epi32(a_rows[3], a_rows[2], a_rows[1], a_rows[0]);
 }
 
 static inline void interleave_block(__m128i r_plane, __m128i g_plane, __m128i b_plane, __m128i a_plane,

@@ -103,43 +103,62 @@ void process_separable_kernel (unsigned char* input, unsigned char* output,
     }
 }
 
+void process_sse_base(unsigned char* dest, const unsigned char* src, 
+                               int width, int height, const float* kernel, int range, int is_vertical) {
+    for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x += 16) {
+            // Ensure we don't process past the image width. This is safe because the image is padded.
+            if (x + 15 >= width) continue;
 
-void process_sse_base(unsigned char* input, float* kernel,
-                           int x, int y, int width, int range,
-                           __m128* sum_red, __m128* sum_green, __m128* sum_blue,
-                           int is_vertical) {
-    
-    for (int kernel_index = -range; kernel_index <= range; kernel_index++) {
-        int neighbor_x, neighbor_y;
-        if (is_vertical) { 
-            neighbor_x = x; 
-            neighbor_y = y + kernel_index; 
-        }
-        else { 
-            neighbor_x = x + kernel_index; 
-            neighbor_y = y; 
-        }
-        
-        // Calculate the data offset based on x, y, and kernel_index
-        int data_offset = ROW_MAJOR_OFFSET(neighbor_x, neighbor_y, width);
-        
-        // Load RGB data
-        __m128i input_data = _mm_loadu_si128((__m128i*)&input[data_offset]);
-        
-        // Convert to floats
-        __m128 red_ps = _mm_cvtepi32_ps(_mm_cvtepu8_epi32(input_data));
-        __m128 green_ps = _mm_cvtepi32_ps(_mm_cvtepu8_epi32(_mm_srli_si128(input_data, 1)));
-        __m128 blue_ps = _mm_cvtepi32_ps(_mm_cvtepu8_epi32(_mm_srli_si128(input_data, 2)));
+            // Accumulators for 16 pixels (processed as 4 groups of 4 floats)
+            __m128 sum_ps[4] = { _mm_setzero_ps(), _mm_setzero_ps(), _mm_setzero_ps(), _mm_setzero_ps() };
+            
+            for (int k = -range; k <= range; k++) {
+                const unsigned char* pixel_ptr;
+                if (is_vertical) {
+                    // Vertical pass: neighbor pixels are in different rows
+                    pixel_ptr = src + (y + k) * width + x;
+                } else {
+                    // Horizontal pass: neighbor pixels are in the same row
+                    pixel_ptr = src + y * width + x + k;
+                }
+                
+                __m128i pixels_u8 = _mm_loadu_si128((const __m128i*)pixel_ptr);
+                __m128 weight_vec = _mm_set1_ps(kernel[k + range]);
 
-        // Apply gaussian weights
-        __m128 weight = _mm_set1_ps(kernel[kernel_index + range]);
-        *sum_red = _mm_add_ps(*sum_red, _mm_mul_ps(red_ps, weight));
-        *sum_green = _mm_add_ps(*sum_green, _mm_mul_ps(green_ps, weight));
-        *sum_blue = _mm_add_ps(*sum_blue, _mm_mul_ps(blue_ps, weight));
+                // Unpack 16 uchars to 4 vectors of 4 floats
+                __m128i zero = _mm_setzero_si128();
+                __m128i p16_lo = _mm_unpacklo_epi8(pixels_u8, zero);
+                __m128i p16_hi = _mm_unpackhi_epi8(pixels_u8, zero);
+                
+                __m128 p32_0 = _mm_cvtepi32_ps(_mm_unpacklo_epi16(p16_lo, zero));
+                __m128 p32_1 = _mm_cvtepi32_ps(_mm_unpackhi_epi16(p16_lo, zero));
+                __m128 p32_2 = _mm_cvtepi32_ps(_mm_unpacklo_epi16(p16_hi, zero));
+                __m128 p32_3 = _mm_cvtepi32_ps(_mm_unpackhi_epi16(p16_hi, zero));
+
+                // Multiply by kernel weight and accumulate
+                sum_ps[0] = _mm_add_ps(sum_ps[0], _mm_mul_ps(p32_0, weight_vec));
+                sum_ps[1] = _mm_add_ps(sum_ps[1], _mm_mul_ps(p32_1, weight_vec));
+                sum_ps[2] = _mm_add_ps(sum_ps[2], _mm_mul_ps(p32_2, weight_vec));
+                sum_ps[3] = _mm_add_ps(sum_ps[3], _mm_mul_ps(p32_3, weight_vec));
+            }
+            
+            // Convert accumulator floats back to 32-bit integers
+            __m128i i32_0 = _mm_cvtps_epi32(sum_ps[0]);
+            __m128i i32_1 = _mm_cvtps_epi32(sum_ps[1]);
+            __m128i i32_2 = _mm_cvtps_epi32(sum_ps[2]);
+            __m128i i32_3 = _mm_cvtps_epi32(sum_ps[3]);
+
+            // Pack 32-bit integers down to 16-bit, then to 8-bit with saturation
+            __m128i i16_01 = _mm_packs_epi32(i32_0, i32_1);
+            __m128i i16_23 = _mm_packs_epi32(i32_2, i32_3);
+            __m128i final_u8 = _mm_packus_epi16(i16_01, i16_23);
+            
+            // Store the 16 processed pixels back to the destination plane
+            _mm_storeu_si128((__m128i*)(dest + y * width + x), final_u8);
+        }
     }
 }
-
-
 
 // To properly prepare the loop for SSE, we will need to deinterleave the RGB values in order to process them using SIMD 
 // (i.e. can't have same instruction on different RGB channels).

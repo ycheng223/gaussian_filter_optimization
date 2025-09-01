@@ -63,96 +63,86 @@ void gaussian_filter_separable(unsigned char* image, int width, int height, floa
 
 
 
-// Base SSE case of applying naive SSE optimization directly on the separable case above.
+// SSE base implementation, first deinterleaves the image into separate R, G, B, and A planes. SSE operations are then applied 
+// to each color plane independently. Finally, the planes are reinterleaved to form the final image.
 void gaussian_filter_sse_base(unsigned char* image, int width, int height, float sigma, int kernel_size) {
-    
     int range = kernel_size / 2;
-    
-    // Precompute gaussian kernel
-    float* kernel = precompute_gaussian_kernel(kernel_size, sigma);
-    if(!kernel) {
-        return;
-    }
 
-    // Pad the image to make it a multiple of 4 and ensure that the kernel does not exceed the boundaries
+    // Precompute the 1D Gaussian kernel
+    float* kernel = precompute_gaussian_kernel(kernel_size, sigma);
+    if (!kernel) return;
+
+    // Pad the original interleaved image to handle kernel borders
     PaddedImage* padded = image_padding_transform(image, width, height, range);
     if (!padded) {
         free(kernel);
         return;
     }
 
-    // Get the dimensions and memory location of the padded image from the returned struct
-    unsigned char* padded_image = padded->data;
+    // Get dimensions of padded unit and allocation block size
     int padded_width = padded->padded_width;
     int padded_height = padded->padded_height;
+    size_t padded_plane_size = (size_t)padded_width * padded_height;
 
-    // Next we prepare a temp buffer for the horizontal pass (i.e. convolve the rows with the normalized 1D gaussian kernel calculated above)
-    unsigned char* temp = (unsigned char*)malloc(PADDED_IMG_SIZE(padded_width, padded_height));
-    if (!temp) {
-        fprintf(stderr, "Failed to allocate temp buffer\n");
+    // Deinterleave the padded image into separate R,G,B,A planes
+    unsigned char* planar_padded = deinterleave_rgb_base(padded->data, padded_width, padded_height);
+    if (!planar_padded) {
+        free(kernel);
         free(padded->data);
         free(padded);
-        free(kernel);
         return;
     }
-    
-    // Horizontal pass (is_vertical = 0 in process_sse_base)
-    for(int y = 0; y < padded_height; y++) {
-        for(int x = 0; x < padded_width; x += 4) {
-            __m128 sum_red = _mm_setzero_ps();
-            __m128 sum_green = _mm_setzero_ps();
-            __m128 sum_blue = _mm_setzero_ps();
 
-            process_sse_base(padded_image, kernel, x, y, padded_width, range,
-                           &sum_red, &sum_green, &sum_blue, 0);
-
-            store_rgba_results(
-                temp + ROW_MAJOR_OFFSET(x, y, padded_width),
-                sum_red, sum_green, sum_blue,
-                padded_image + ROW_MAJOR_OFFSET(x, y, padded_width)
-            );
-        }
+    // Temp buffer for horizontal pass result
+    unsigned char* temp_planar_padded = (unsigned char*)malloc(padded_plane_size * CHANNELS_PER_PIXEL);
+    if (!temp_planar_padded) {
+        fprintf(stderr, "Failed to allocate temp planar buffer\n");
+        free(kernel);
+        free(padded->data);
+        free(padded);
+        free(planar_padded);
+        return;
     }
 
-    // The temp buffer will also serve as our intermediate buffer since we need to process the
-    // Vertical Pass on the results of our Horizontal Pass
-
-    // Vertical pass (is_vertical = 1 in process_sse_base)
-    for(int y = 0; y < padded_height; y++) {
-        for(int x = 0; x < padded_width; x += 4) {
-            __m128 sum_red = _mm_setzero_ps();
-            __m128 sum_green = _mm_setzero_ps();
-            __m128 sum_blue = _mm_setzero_ps();
-
-            process_sse_base(temp, kernel, x, y, padded_width, range,
-                           &sum_red, &sum_green, &sum_blue, 1);
-
-            // The vertical pass reads from temp, and writes its final blurred RGB
-            // back into temp. The alpha is sourced from the original padded image.
-            store_rgba_results(
-                temp + ROW_MAJOR_OFFSET(x, y, padded_width),
-                sum_red, sum_green, sum_blue,
-                padded_image + ROW_MAJOR_OFFSET(x, y, padded_width)
-            );
-        }
+    // Process each color plane (R, G, B) with two separable SSE passes. The Alpha plane (channel 3) is skipped.
+    for (int c = 0; c < 3; ++c) {
+        unsigned char* src_plane = planar_padded + c * padded_plane_size;
+        unsigned char* temp_plane = temp_planar_padded + c * padded_plane_size;
+        
+        // Horizontal pass (reads from src_plane, writes to temp_plane)
+        process_sse_base(temp_plane, src_plane, padded_width, padded_height, kernel, range, 0);
+        
+        // Vertical pass (reads from temp_plane, writes back to src_plane)
+        process_sse_base(src_plane, temp_plane, padded_width, padded_height, kernel, range, 1);
     }
 
-    // After vertical pass, copy only the valid, unpadded region from the final
-    // processed buffer (temp) back to the original image buffer.
-    for(int y = 0; y < height; y++) {
-        memcpy(image + PADDED_ROW_SIZE(y * width),
-               temp + ROW_MAJOR_OFFSET(range, y + range, padded_width),
-               PADDED_ROW_SIZE(width));
+    // 6. Reinterleave the blurred R, G, B planes and the original A plane back into an RGBA image
+    unsigned char* blurred_interleaved_padded = reinterleave_rgb_base(planar_padded, padded_width, padded_height);
+    if (!blurred_interleaved_padded) {
+        // Handle cleanup if reinterleave fails
+        free(kernel);
+        free(padded->data);
+        free(padded);
+        free(planar_padded);
+        free(temp_planar_padded);
+        return;
     }
 
-    // Clean up allocated memory
-    free(temp);
+    // 7. Copy the unpadded center from the result back to the original image buffer
+    for (int y = 0; y < height; ++y) {
+        memcpy(image + (size_t)y * width * CHANNELS_PER_PIXEL,
+               blurred_interleaved_padded + ROW_MAJOR_OFFSET(range, y + range, padded_width),
+               (size_t)width * CHANNELS_PER_PIXEL);
+    }
+
+    // 8. Clean up all allocated memory
     free(kernel);
     free(padded->data);
     free(padded);
+    free(planar_padded);
+    free(temp_planar_padded);
+    free(blurred_interleaved_padded);
 }
-
-
 
 // SSE implementation using that deinterleaves RGB in the SSE register itself using shuffle and bitmasks.
 void gaussian_filter_sse_shuffle(unsigned char* image, int width, int height, float sigma, int kernel_size){
