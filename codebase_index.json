@@ -1,0 +1,411 @@
+{
+  "project_name": "gaussian_filter_cuda",
+  "description": "CUDA-optimized Gaussian filtering implementation with SSE optimizations for image processing",
+  "last_indexed": "2024-09-11T15:52:00Z",
+  "git_branch": "interleave_test",
+  "git_status": {
+    "modified": [
+      ".vscode/settings.json",
+      "gaussian_filter",
+      "inc/common.h",
+      "src/main.c"
+    ],
+    "deleted": [
+      "output/test_1_k11_base.png",
+      "output/test_1_k11_separable.png", 
+      "output/test_1_k11_sse_base.png",
+      "output/test_1_k11_sse_shuffle.png",
+      "output/test_1_k13_base.png",
+      "output/test_1_k13_separable.png",
+      "output/test_1_k13_sse_base.png",
+      "output/test_1_k13_sse_shuffle.png",
+      "output/test_1_k5_base.png",
+      "output/test_1_k5_separable.png",
+      "output/test_1_k5_sse_base.png",
+      "output/test_1_k5_sse_shuffle.png",
+      "output/test_1_k7_base.png",
+      "output/test_1_k7_separable.png",
+      "output/test_1_k7_sse_base.png",
+      "output/test_1_k7_sse_shuffle.png"
+    ],
+    "untracked": [
+      "src/gaussian_processing_cuda"
+    ]
+  },
+  "directory_structure": {
+    "root": "/home/jyuc/C/gaussian_filter/gaussian_filter_cuda",
+    "directories": {
+      ".claude": {
+        "description": "Claude Code settings",
+        "files": [
+          "settings.local.json"
+        ]
+      },
+      "inc": {
+        "description": "Header files",
+        "subdirectories": {
+          "lodepng": {
+            "description": "PNG encoding/decoding library",
+            "files": [
+              "lodepng.c",
+              "lodepng.h"
+            ]
+          }
+        },
+        "files": [
+          "common.h",
+          "debug.h",
+          "gaussian_filter.h",
+          "gaussian_processing.h",
+          "image_operations.h",
+          "png_transform.h",
+          "utility.h"
+        ]
+      },
+      "input": {
+        "description": "Input images for processing",
+        "files": [
+          "test_1.png"
+        ]
+      },
+      "output": {
+        "description": "Output directory for processed images",
+        "files": [
+          "test_file.txt"
+        ]
+      },
+      "src": {
+        "description": "Source code files",
+        "files": [
+          "debug.c",
+          "gaussian_filter.c", 
+          "gaussian_processing.c",
+          "gaussian_processing_cuda",
+          "image_operations.c",
+          "main.c",
+          "png_transform.c",
+          "utility.c"
+        ]
+      },
+      ".vscode": {
+        "description": "VS Code settings",
+        "files": [
+          "settings.json"
+        ]
+      }
+    },
+    "root_files": [
+      "gaussian_filter",
+      "Makefile"
+    ]
+  },
+  "build_system": {
+    "type": "Makefile",
+    "compiler": "gcc",
+    "flags": ["-O2", "-Wall", "-Wextra", "-Iinc", "-Iinc/lodepng", "-mssse3", "-msse4.1"],
+    "target": "gaussian_filter",
+    "libraries": ["-lm"],
+    "source_files": [
+      "src/main.c",
+      "src/gaussian_filter.c",
+      "src/gaussian_processing.c", 
+      "src/utility.c",
+      "src/image_operations.c",
+      "src/png_transform.c",
+      "src/debug.c",
+      "inc/lodepng/lodepng.c"
+    ]
+  },
+  "architecture": {
+    "type": "C with SSE optimizations",
+    "target_architectures": ["x86_64"],
+    "optimization_techniques": [
+      "SSE/SSSE3/SSE4.1 SIMD instructions",
+      "Memory alignment for SIMD",
+      "Separable convolution",
+      "Block-wise transpose operations",
+      "Channel deinterleaving/reinterleaving"
+    ]
+  },
+  "files": {
+    "headers": {
+      "inc/common.h": {
+        "description": "Common definitions, constants, data structures, and includes",
+        "key_defines": [
+          "CHANNELS_PER_PIXEL (4)",
+          "MIN_SIGMA (0.25)",
+          "MAX_SIGMA (5.25)",
+          "SIGMA_STEP (1)",
+          "SSE_BLOCK_SIZE (4)"
+        ],
+        "key_structs": [
+          "BenchmarkResult",
+          "PaddedImage"
+        ],
+        "includes": ["stdio.h", "stdlib.h", "string.h", "math.h", "time.h", "stdbool.h", "sys/stat.h", "sys/types.h", "assert.h", "immintrin.h", "emmintrin.h", "tmmintrin.h", "smmintrin.h"]
+      },
+      "inc/debug.h": {
+        "description": "Debug mode function declarations",
+        "functions": ["run_debug_mode"]
+      },
+      "inc/gaussian_filter.h": {
+        "description": "Gaussian filter implementation function declarations",
+        "functions": [
+          "gaussian_filter_base",
+          "gaussian_filter_separable", 
+          "gaussian_filter_sse_base",
+          "gaussian_filter_sse_shuffle",
+          "measure_filter_time"
+        ]
+      },
+      "inc/gaussian_processing.h": {
+        "description": "Low-level Gaussian processing functions",
+        "functions": [
+          "precompute_gaussian_kernel",
+          "process_kernel_base",
+          "process_separable_kernel",
+          "process_sse_base", 
+          "process_sse_shuffle",
+          "process_sse_shuffle_vertical"
+        ]
+      },
+      "inc/image_operations.h": {
+        "description": "Image transformation and manipulation functions",
+        "functions": [
+          "image_padding_transform",
+          "border_clamp",
+          "transpose_rgb_base",
+          "deinterleave_rgb_base",
+          "reinterleave_rgb_base",
+          "transpose_rgb_block_sse",
+          "retranspose_rgb_block_sse", 
+          "deinterleave_rgb_block_sse",
+          "reinterleave_rgb_block_sse",
+          "store_rgba_results"
+        ]
+      },
+      "inc/png_transform.h": {
+        "description": "PNG encoding/decoding interface",
+        "functions": [
+          "image_decode",
+          "image_encode"
+        ]
+      },
+      "inc/utility.h": {
+        "description": "Utility functions for benchmarking and file operations",
+        "functions": [
+          "print_statistics",
+          "countdown",
+          "save_image"
+        ]
+      },
+      "inc/lodepng/lodepng.h": {
+        "description": "PNG encoding/decoding library header",
+        "version": "20250506",
+        "license": "zlib license",
+        "external_library": true
+      }
+    },
+    "source_files": {
+      "src/main.c": {
+        "description": "Main program entry point with benchmarking loop",
+        "key_features": [
+          "Command-line debug mode support",
+          "Benchmark loop for different filter techniques",
+          "Performance measurement and statistics collection",
+          "Image processing pipeline"
+        ],
+        "filter_techniques": [
+          "1: Base 2D Gaussian",
+          "2: Separable Gaussian", 
+          "3: SSE Base",
+          "4: SSE Shuffle"
+        ],
+        "dependencies": [
+          "gaussian_filter.h",
+          "png_transform.h", 
+          "image_operations.h",
+          "utility.h",
+          "debug.h"
+        ]
+      },
+      "src/gaussian_filter.c": {
+        "description": "High-level Gaussian filter implementations",
+        "implementations": {
+          "gaussian_filter_base": "2D convolution using moving window",
+          "gaussian_filter_separable": "Separable 1D convolution (horizontal then vertical)",
+          "gaussian_filter_sse_base": "SSE-optimized separable convolution with deinterleaving",
+          "gaussian_filter_sse_shuffle": "SSE with in-register channel shuffling and transpose optimization"
+        },
+        "optimization_strategies": [
+          "Memory-aligned operations",
+          "SIMD vectorization",
+          "Cache-friendly memory access patterns",
+          "Reduced memory allocations"
+        ]
+      },
+      "src/gaussian_processing.c": {
+        "description": "Low-level Gaussian convolution processing functions",
+        "key_functions": {
+          "precompute_gaussian_kernel": "Pre-calculates normalized Gaussian weights",
+          "process_kernel_base": "2D convolution with border clamping",
+          "process_separable_kernel": "1D separable convolution",
+          "process_sse_base": "SSE-optimized planar processing",
+          "process_sse_shuffle": "SSE with shuffle masks for RGB deinterleaving",
+          "process_sse_shuffle_vertical": "Vertical pass for transposed data"
+        },
+        "simd_optimizations": [
+          "128-bit register operations",
+          "Parallel channel processing",
+          "Efficient data unpacking/packing"
+        ]
+      },
+      "src/image_operations.c": {
+        "description": "Image transformation and memory layout operations",
+        "key_operations": {
+          "padding": "Border extension with clamping for kernel overlap",
+          "transpose": "Matrix transpose for cache-friendly vertical convolution",
+          "deinterleave": "RGB channel separation for SIMD processing",
+          "reinterleave": "Channel recombination after processing"
+        },
+        "sse_implementations": {
+          "transpose_rgb_block_sse": "4x4 block transpose using SSE registers",
+          "deinterleave_rgb_block_sse": "SIMD RGB channel separation",
+          "reinterleave_rgb_block_sse": "SIMD channel recombination",
+          "store_rgba_results": "Float to integer conversion and storage"
+        }
+      },
+      "src/png_transform.c": {
+        "description": "PNG file I/O operations using lodepng library",
+        "functions": {
+          "image_decode": "Loads PNG from input directory to RGBA array",
+          "image_encode": "Encodes RGBA array to PNG format in memory"
+        }
+      },
+      "src/utility.c": {
+        "description": "Benchmarking, timing, and file output utilities",
+        "functions": {
+          "measure_filter_time": "CPU and wall-clock timing with filter selection",
+          "print_statistics": "Aggregated performance statistics",
+          "countdown": "User interface countdown timer",
+          "save_image": "Saves processed images with descriptive filenames"
+        }
+      },
+      "src/debug.c": {
+        "description": "Interactive debugging and testing functions",
+        "debug_functions": [
+          "debug_padding: Tests image padding transformation",
+          "debug_transpose_base: Tests basic transpose reversibility",
+          "debug_deinterleave_base: Tests channel separation",
+          "debug_reinterleave_base: Tests channel recombination",
+          "debug_transpose_sse: Tests SSE transpose operations",
+          "debug_deinterleave_sse: Tests SSE deinterleaving",
+          "debug_reinterleave_sse: Tests SSE reinterleaving",
+          "debug_store_rgba: Tests SSE result storage"
+        ],
+        "interactive_menu": "Command-line interface for testing individual components"
+      },
+      "src/gaussian_processing_cuda": {
+        "description": "Empty placeholder file for CUDA implementation",
+        "status": "untracked",
+        "size": 0
+      },
+      "inc/lodepng/lodepng.c": {
+        "description": "PNG encoding/decoding library implementation",
+        "external_library": true,
+        "license": "zlib license"
+      }
+    },
+    "configuration_files": {
+      "Makefile": {
+        "description": "Build configuration",
+        "compiler_flags": ["-O2", "-Wall", "-Wextra", "-mssse3", "-msse4.1"],
+        "include_paths": ["-Iinc", "-Iinc/lodepng"],
+        "targets": ["all", "clean", "run"]
+      },
+      ".vscode/settings.json": {
+        "description": "VS Code C file associations",
+        "associations": {
+          "stdlib.h": "c",
+          "gaussian_filter.h": "c",
+          "lodepng.h": "c",
+          "common.h": "c",
+          "emmintrin.h": "c",
+          "utility.h": "c",
+          "stdio.h": "c",
+          "png_transform.h": "c",
+          "image_operations.h": "c",
+          "tmmintrin.h": "c"
+        }
+      },
+      ".claude/settings.local.json": {
+        "description": "Claude Code permissions",
+        "permissions": {
+          "allow": ["Bash(tree:*)"],
+          "deny": [],
+          "ask": []
+        }
+      }
+    }
+  },
+  "algorithms": {
+    "gaussian_filtering": {
+      "base_implementation": {
+        "type": "2D convolution",
+        "complexity": "O(n²k²) where n=image_size, k=kernel_size",
+        "description": "Direct 2D Gaussian kernel convolution with border clamping"
+      },
+      "separable_implementation": {
+        "type": "Two 1D convolutions",
+        "complexity": "O(n²k) where n=image_size, k=kernel_size",
+        "description": "Horizontal pass followed by vertical pass using separable property"
+      },
+      "sse_base_implementation": {
+        "type": "SIMD separable convolution",
+        "complexity": "O(n²k/4) with SIMD parallelization",
+        "description": "Deinterleaves channels, processes with SSE, reinterleaves result"
+      },
+      "sse_shuffle_implementation": {
+        "type": "SIMD with in-register deinterleaving",
+        "complexity": "O(n²k/4) with optimized memory access",
+        "description": "Uses shuffle masks for channel separation, transpose for vertical pass"
+      }
+    }
+  },
+  "performance_characteristics": {
+    "sigma_range": "0.25 to 5.25 with step 1.0",
+    "kernel_size_formula": "2*ceil(3*sigma) + 1",
+    "supported_formats": ["PNG with RGBA channels"],
+    "memory_alignment": "16-byte aligned for SSE operations",
+    "benchmark_metrics": ["CPU time", "Wall clock time"]
+  },
+  "dependencies": {
+    "external_libraries": {
+      "lodepng": {
+        "version": "20250506",
+        "purpose": "PNG encoding/decoding",
+        "license": "zlib license"
+      }
+    },
+    "system_requirements": {
+      "processor": "x86_64 with SSSE3/SSE4.1 support",
+      "compiler": "GCC with SSE intrinsics support",
+      "os": "Unix-like system (tested on Linux)"
+    }
+  },
+  "testing": {
+    "debug_mode": {
+      "activation": "Command line argument 'debug'",
+      "test_functions": [
+        "Image padding validation",
+        "Transpose reversibility",
+        "Channel deinterleaving accuracy",
+        "SSE operation correctness"
+      ]
+    },
+    "sample_data": {
+      "input_image": "input/test_1.png",
+      "output_naming": "output/{basename}_k{kernel_size}_{filter_type}.png"
+    }
+  }
+}

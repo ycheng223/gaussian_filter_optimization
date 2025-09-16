@@ -23,7 +23,7 @@ int main(int argc, char **argv){
     } else {
 
         // Otherwise, iteratively benchmark each filtering technique and record the parameters (technique, sigma, kernel_size, cpu_time, wall_time) in an array
-        int techniques[] = {1, 2, 3, 4}; // 1 = base, 2 = seperable, 3 = SSE_Base, 4 = SSE_Shuffle
+        int techniques[] = {1, 2, 3, 4, 5}; // 1 = base, 2 = seperable, 3 = SSE_Base, 4 = SSE_Shuffle, 5 = CUDA
         int n_techniques = sizeof(techniques) / sizeof(techniques[0]);
         int total_results = n_techniques * 8; // total # of iterations =  n_techniques*(max_sigma - starting_sigma)/step_size + 1 = n_techniques*8
         
@@ -51,7 +51,11 @@ int main(int argc, char **argv){
             for(int i = 0; i <= n_sigma_steps; i++){
 
                 float sigma = MIN_SIGMA + i * SIGMA_STEP; // Calculate the current sigma value
-                int kernel_size = 2*(int)ceil(3*sigma) + 1; // First, calculate an acceptable kernel size given the sigma level
+                int kernel_size = 2*(int)ceil(2*sigma) + 1; // First, calculate an acceptable kernel size given the sigma level
+//                if(kernel_size % 2 == 0){
+//                    kernel_size += 1;
+//                } // Keep kernel size odd to prevent segmentation fault
+
                 BenchmarkResult result;  // Instantiate struct BenchmarkResult for holding processing times
                 
                 // Fill with initial parameters
@@ -67,7 +71,7 @@ int main(int argc, char **argv){
                 }
 
                 // Measure filter time
-                measure_filter_time(image, result.width, result.height, kernel_size, sigma, filter_choice, &result);
+                measure_filter_time(image, result.width, result.height, sigma, kernel_size, filter_choice, &result);
 
                 // Encode the image to a memory buffer
                 save_image("test_1.png", image, result.width, result.height, filter_choice, kernel_size);

@@ -8,6 +8,10 @@
         "utility.h": "c",
         "stdio.h": "c",
         "png_transform.h": "c",
-        "image_operations.h": "c"
-    }
+        "image_operations.h": "c",
+        "tmmintrin.h": "c",
+        "gaussian_processing_cuda": "c",
+        "gaussian_filter_cuda.h": "c"
+    },
+    "C_Cpp.errorSquiggles": "disabled"
 }

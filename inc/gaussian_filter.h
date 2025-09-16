@@ -12,6 +12,4 @@ void gaussian_filter_sse_base(unsigned char* image, int width, int height, float
 
 void gaussian_filter_sse_shuffle(unsigned char* image, int width, int height, float sigma, int kernel_size);
 
-void measure_filter_time(unsigned char* image, int width, int height, float sigma, int kernel_size, int filter_choice, BenchmarkResult *result);
-
 #endif // GAUSSIAN_FILTER_H

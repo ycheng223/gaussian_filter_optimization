@@ -1,6 +1,8 @@
 #ifndef COMMON_H
 #define COMMON_H
 
+// Dependencies and constants used by all subprograms
+
 // Standard Libraries
 #include <stdio.h>
 #include <stdlib.h>
@@ -22,11 +24,11 @@
 
 // Constants
 #define CHANNELS_PER_PIXEL 4 // RGBA to align with SSE
-#define MIN_SIGMA 0.5
-#define MAX_SIGMA 2
-#define SIGMA_STEP 0.5
+#define MIN_SIGMA 0.25
+#define MAX_SIGMA 5.25
+#define SIGMA_STEP 1
 #define SSE_BLOCK_SIZE 4
-#define STARTING_FILTER 0 // Which filter to start on (useful for debugging so we don't have to run all of them)
+#define STARTING_FILTER 1 // Which filter to start on (useful for debugging so we don't have to run all of them)
 
 // Image Dimension Constants
 #define PADDED_IMG_SIZE(width, height) ((width) * (height) * CHANNELS_PER_PIXEL)

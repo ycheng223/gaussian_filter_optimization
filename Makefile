@@ -3,7 +3,7 @@
 
 TARGET = gaussian_filter
 
-SRC = src/main.c \
+C_SRC = src/main.c \
       src/gaussian_filter.c \
       src/gaussian_processing.c \
       src/utility.c \
@@ -12,17 +12,34 @@ SRC = src/main.c \
       src/debug.c \
       inc/lodepng/lodepng.c
 
+CU_SRC = src/gaussian_filter_cuda.cu
+
 CC = gcc
-CFLAGS = -O2 -Wall -Wextra -Iinc -Iinc/lodepng -mssse3 -msse4.1
-LDFLAGS = -lm
+NVCC = nvcc
+
+CFLAGS = -O2 -Wall -Wextra -Iinc -Iinc/lodepng -mssse3 -msse4.1 -I/usr/local/cuda/include
+NVCCFLAGS = -O2 -Iinc -I/usr/local/cuda/include
+LDFLAGS = -lm -lcuda -lcudart -L/usr/local/cuda/lib64
+
+# Object files
+C_OBJS = $(C_SRC:.c=.o)
+CU_OBJS = $(CU_SRC:.cu=.o)
 
 all: $(TARGET)
 
-$(TARGET): $(SRC)
-	$(CC) $(CFLAGS) $(SRC) -o $(TARGET) $(LDFLAGS)
+$(TARGET): $(C_OBJS) $(CU_OBJS)
+	$(NVCC) $(C_OBJS) $(CU_OBJS) -o $(TARGET) $(LDFLAGS)
+
+# Compile C files
+%.o: %.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+# Compile CUDA files  
+%.o: %.cu
+	$(NVCC) $(NVCCFLAGS) -c $< -o $@
 
 clean:
-	rm -f $(TARGET)
+	rm -f $(C_OBJS) $(CU_OBJS) $(TARGET)
 
 run: $(TARGET)
 	./$(TARGET)
