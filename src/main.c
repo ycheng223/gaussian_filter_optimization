@@ -5,6 +5,7 @@
 #include <sys/stat.h>
 
 #include "../inc/gaussian_filter.h"
+#include "gaussian_filter_cuda.h"
 #include "../inc/png_transform.h"
 #include "../inc/image_operations.h"
 #include "../inc/utility.h"
@@ -23,7 +24,7 @@ int main(int argc, char **argv){
     } else {
 
         // Otherwise, iteratively benchmark each filtering technique and record the parameters (technique, sigma, kernel_size, cpu_time, wall_time) in an array
-        int techniques[] = {1, 2, 3, 4, 5}; // 1 = base, 2 = seperable, 3 = SSE_Base, 4 = SSE_Shuffle, 5 = CUDA
+        int techniques[] = {1, 2, 3}; // 1 = base, 2 = seperable, 3 = CUDA
         int n_techniques = sizeof(techniques) / sizeof(techniques[0]);
         int total_results = n_techniques * 8; // total # of iterations =  n_techniques*(max_sigma - starting_sigma)/step_size + 1 = n_techniques*8
         
@@ -69,6 +70,9 @@ int main(int argc, char **argv){
                     free(results);
                     return 1;
                 }
+
+                // Prepare GPU
+                warmup_gpu();
 
                 // Measure filter time
                 measure_filter_time(image, result.width, result.height, sigma, kernel_size, filter_choice, &result);

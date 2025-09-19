@@ -12,10 +12,8 @@
 void print_statistics(BenchmarkResult* results, int count) {
     double base_cpu_total = 0.0, base_wall_total = 0.0;
     double sep_cpu_total = 0.0, sep_wall_total = 0.0;
-    double sse_cpu_total = 0.0, sse_wall_total = 0.0;
-    double shuffle_cpu_total = 0.0, shuffle_wall_total = 0.0;
     double cuda_gpu_total = 0.0, cuda_wall_total = 0.0;
-    int base_count = 0, sep_count = 0, sse_count = 0, shuffle_count = 0, cuda_count = 0;
+    int base_count = 0, sep_count = 0, cuda_count = 0;
 
 
     // Print total times for each filter_choice
@@ -31,17 +29,7 @@ void print_statistics(BenchmarkResult* results, int count) {
                 sep_wall_total += results[i].wall_time;
                 sep_count++;
                 break;
-            case 3: // SSE Base
-                sse_cpu_total += results[i].cpu_time;
-                sse_wall_total += results[i].wall_time;
-                sse_count++;
-                break;
-            case 4: // SSE Shuffle
-                shuffle_cpu_total += results[i].cpu_time;
-                shuffle_wall_total += results[i].wall_time;
-                shuffle_count++;
-                break;
-            case 5: // Base CUDA
+            case 3: // Base CUDA
                 cuda_gpu_total += results[i].cpu_time;
                 cuda_wall_total += results[i].wall_time;
                 cuda_count++;
@@ -57,19 +45,13 @@ void print_statistics(BenchmarkResult* results, int count) {
     if (sep_count > 0)
         printf("Separable: CPU: %.3fms, Wall: %.3fms\n", 
                (sep_cpu_total/sep_count)*1000, (sep_wall_total/sep_count)*1000);
-    if (sse_count > 0)
-        printf("SSE Base:  CPU: %.3fms, Wall: %.3fms\n", 
-               (sse_cpu_total/sse_count)*1000, (sse_wall_total/sse_count)*1000);
-    if (shuffle_count > 0)
-        printf("SSE Shuffle: CPU: %.3fms, Wall: %.3fms\n", 
-               (shuffle_cpu_total/shuffle_count)*1000, (shuffle_wall_total/shuffle_count)*1000);
     if (cuda_count > 0)
         printf("CUDA Base: CPU: %.3fms, Wall: %.3fms\n", 
                (cuda_gpu_total/cuda_count)*1000, (cuda_wall_total/cuda_count)*1000);
 }
 
 
-/// Measure wall time (absolute time) and CPU time (computational time) needed to finish applying the gaussian filter to the image
+/// Run and benchmark filters, measure wall time (absolute time) and CPU time (computational time) needed to finish applying the gaussian filter to the image
 void measure_filter_time(unsigned char* image, int width, int height, float sigma, int kernel_size, int filter_choice, BenchmarkResult *result) {
 
     clock_t start_cpu, end_cpu;
@@ -80,7 +62,7 @@ void measure_filter_time(unsigned char* image, int width, int height, float sigm
     printf("Image size: %dx%d pixels\n", width, height);
     printf("Kernel size: %d\n", kernel_size);
     printf("Sigma: %.2f\n", sigma);
-    
+
     start_cpu = clock();
     start_wall = time(NULL);
     
@@ -91,12 +73,6 @@ void measure_filter_time(unsigned char* image, int width, int height, float sigm
         printf("Using Separable Gaussian Filter...\n");
         gaussian_filter_separable(image, width, height, sigma, kernel_size);
     } else if (filter_choice == 3) {
-        printf("Using Base SSE Sep. Gaussian Filter (Base SSE)...\n");
-        gaussian_filter_sse_base(image, width, height, sigma, kernel_size);
-    } else if (filter_choice == 4) {
-        printf("Using SSE Load Shuffle Sep. Gaussian Filter...\n");
-        gaussian_filter_sse_shuffle(image, width, height, sigma, kernel_size);
-    } else if (filter_choice == 5) {
         printf("Using Base CUDA Sep. Gaussian Filter (Base Cuda)...\n");
         gaussian_filter_cuda(image, width, height, sigma, kernel_size);
     }
@@ -140,7 +116,7 @@ void countdown(int seconds){
 int save_image(const char* filename, const unsigned char* image_data, 
                int width, int height, int filter_choice, int kernel_size) {
     // Output filter names
-    const char* filter_names[] = {"base", "separable", "sse_base", "sse_shuffle", "cuda"};
+    const char* filter_names[] = {"base", "separable", "cuda"};
 
     // Ensure output directory exists
     struct stat st = {0};
