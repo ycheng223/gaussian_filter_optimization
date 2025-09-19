@@ -5,6 +5,7 @@
 #include <sys/stat.h>
 
 #include "../inc/gaussian_filter.h"
+#include "gaussian_filter_cuda.h"
 #include "../inc/png_transform.h"
 #include "../inc/image_operations.h"
 #include "../inc/utility.h"
@@ -69,6 +70,9 @@ int main(int argc, char **argv){
                     free(results);
                     return 1;
                 }
+
+                // Prepare GPU
+                warmup_gpu();
 
                 // Measure filter time
                 measure_filter_time(image, result.width, result.height, sigma, kernel_size, filter_choice, &result);

@@ -539,6 +539,7 @@ static inline void interleave_and_store_rgba(unsigned char* output, __m128i pack
         output[i * 4 + 3] = input[i * 4 + 3];
     }
 }
+
 void store_rgba_results(unsigned char* output, __m128 red, __m128 green, __m128 blue, const unsigned char* input) {
     __m128i r_int, g_int, b_int;
     convert_float_int32(red, green, blue, &r_int, &g_int, &b_int);

@@ -69,7 +69,7 @@ void print_statistics(BenchmarkResult* results, int count) {
 }
 
 
-/// Measure wall time (absolute time) and CPU time (computational time) needed to finish applying the gaussian filter to the image
+/// Run and benchmark filters, measure wall time (absolute time) and CPU time (computational time) needed to finish applying the gaussian filter to the image
 void measure_filter_time(unsigned char* image, int width, int height, float sigma, int kernel_size, int filter_choice, BenchmarkResult *result) {
 
     clock_t start_cpu, end_cpu;
@@ -80,7 +80,7 @@ void measure_filter_time(unsigned char* image, int width, int height, float sigm
     printf("Image size: %dx%d pixels\n", width, height);
     printf("Kernel size: %d\n", kernel_size);
     printf("Sigma: %.2f\n", sigma);
-    
+
     start_cpu = clock();
     start_wall = time(NULL);
     

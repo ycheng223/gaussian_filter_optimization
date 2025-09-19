@@ -30,6 +30,22 @@ float* precompute_gaussian_kernel(int kernel_size, float sigma) {
     return kernel;
 }
 
+// Warmup GPU so 1st run isn't super slow
+__global__ void warmup_kernel() {
+      // Empty kernel that does minimal work
+      int idx = blockIdx.x * blockDim.x + threadIdx.x;
+      if (idx == 0) {
+          // Minimal operation to ensure kernel actually runs
+          int dummy = 1 + 1;
+      }
+  }
+
+// C wrapper function to launch warmup kernel
+extern "C" void warmup_gpu(void) {
+    warmup_kernel<<<1, 1>>>();
+    cudaDeviceSynchronize();
+}
+
 // Device helper functions
 __device__ void convolve_pixel_horizontal(
     unsigned char* image,

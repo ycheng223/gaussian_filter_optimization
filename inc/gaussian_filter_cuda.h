@@ -20,6 +20,7 @@ extern "C" {
 #endif
 
 __host__ void gaussian_filter_cuda(unsigned char* image, int width, int height, float sigma, int kernel_size);
+void warmup_gpu(void);
 
 #ifdef __cplusplus
 }
