@@ -24,7 +24,7 @@ int main(int argc, char **argv){
     } else {
 
         // Otherwise, iteratively benchmark each filtering technique and record the parameters (technique, sigma, kernel_size, cpu_time, wall_time) in an array
-        int techniques[] = {1, 2, 3, 4, 5}; // 1 = base, 2 = seperable, 3 = SSE_Base, 4 = SSE_Shuffle, 5 = CUDA
+        int techniques[] = {1, 2, 3, 4, 5, 6}; // 1 = base, 2 = seperable, 3 = SSE_Base, 4 = SSE_Shuffle, 5 = CUDA_Base, 6 = CUDA_Constant_Memory
         int n_techniques = sizeof(techniques) / sizeof(techniques[0]);
         int total_results = n_techniques * 8; // total # of iterations =  n_techniques*(max_sigma - starting_sigma)/step_size + 1 = n_techniques*8
         

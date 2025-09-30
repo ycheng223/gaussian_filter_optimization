@@ -5,6 +5,11 @@
 
 // Processing functions
 
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 float* precompute_gaussian_kernel(int kernel_size, float sigma);
 
 void process_kernel_base(unsigned char* image, unsigned char* temp, int x, int y, int width, int height, float sigma, int range);
@@ -16,5 +21,10 @@ void process_sse_base(unsigned char* dest, const unsigned char* src, int width, 
 void process_sse_shuffle(unsigned char* padded_image, float* kernel, const __m128i mask_red, const __m128i mask_green, const __m128i mask_blue, int x, int y, int range, int padded_width, __m128* sum_red, __m128* sum_green, __m128* sum_blue);
 
 void process_sse_shuffle_vertical(unsigned char* transposed, float* kernel, int x, int y, int range, int height, int width, __m128* sum_red, __m128* sum_green, __m128* sum_blue);
+
+#ifdef __cplusplus
+}
+#endif
+
 
 #endif // GAUSSIAN_PROCESSING_H

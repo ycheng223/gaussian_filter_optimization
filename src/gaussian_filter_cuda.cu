@@ -3,32 +3,8 @@
 #include <string.h>
 
 #include "gaussian_filter.h"
+#include "gaussian_processing.h"
 
-
-// Precompute kernel weights
-float* precompute_gaussian_kernel(int kernel_size, float sigma) {
-    int range = kernel_size / 2;
-    float* kernel = (float*)malloc(kernel_size * sizeof(float));
-    
-    if(!kernel) {
-        fprintf(stderr, "Failed to allocate kernel buffer\n");
-        return NULL;
-    }
-    float weight_sum = 0.0f;
-    // Calculate weights and accumulate sum
-    for(int i = 0; i < kernel_size; i++) {
-        int kernel_offset = i - range;
-        kernel[i] = expf(-(kernel_offset * kernel_offset) / (2 * sigma * sigma));
-        weight_sum += kernel[i];
-    }
-
-    // Normalize the weights
-    for(int i = 0; i < kernel_size; i++) {
-        kernel[i] /= weight_sum;
-    }
-
-    return kernel;
-}
 
 // Warmup GPU so 1st run isn't super slow
 __global__ void warmup_kernel() {
@@ -69,6 +45,7 @@ __device__ void convolve_pixel_horizontal(
     }
 }
 
+// Vertical convolution helper
 __device__ void convolve_pixel_vertical(
     unsigned char* image,
     int x, int y, int width, int height,
@@ -91,6 +68,7 @@ __device__ void convolve_pixel_vertical(
     }
 }
 
+// This is the kernel (runs on all SMs)
 __global__ void gaussian_filter_cuda_convolve(
     unsigned char* dev_in, unsigned char* dev_out,
     int width, int height, const float* kernel, int kernel_size, int direction // 0 = horizontal, 1 = vertical
@@ -116,6 +94,7 @@ __global__ void gaussian_filter_cuda_convolve(
     }
 
 
+// Entry point
 extern "C" __host__ void gaussian_filter_cuda(unsigned char* image, int width, int height, float sigma, int kernel_size) {
     
     // Validate input parameters

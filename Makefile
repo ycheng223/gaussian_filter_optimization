@@ -12,7 +12,9 @@ C_SRC = src/main.c \
       src/debug.c \
       inc/lodepng/lodepng.c
 
-CU_SRC = src/gaussian_filter_cuda.cu
+CU_SRC = src/gaussian_filter_cuda.cu \
+      src/gaussian_filter_cuda_constant.cu \
+
 
 CC = gcc
 NVCC = nvcc
